@@ -1,8 +1,5 @@
-import time
-from rqark_tui.libs.tui.draw import TerminalDraw
+from rqark_tui.app import AgentTUI
 
-t = TerminalDraw()
-t.clear()
-t.update()
-time.sleep(2)
-t.restore()
+if __name__ == '__main__':
+    tui_app = AgentTUI()
+    tui_app.run()
