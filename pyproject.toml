@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
     "rqark-app>=0.1.1",
+    "textual>=8.2.8",
     "wcwidth>=0.8.3",
 ]
 
