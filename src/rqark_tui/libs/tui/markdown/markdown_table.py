@@ -1,7 +1,7 @@
 import re
 from collections.abc import Callable
 
-from libs.ansi import _C, display_width, term_width, wrap
+from rqark_tui.libs.tui.ansi import _C, display_width, term_width, wrap
 
 _MD_STRIP_BOLD = re.compile(r'\*\*(.+?)\*\*')
 _MD_STRIP_ITALIC = re.compile(r'(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)')
