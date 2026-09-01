@@ -272,6 +272,26 @@ class MessagePane(RichLog):
             self._message_texts.append(entry)
         self.scroll_end(animate=False)
 
+    def append_system(self, text: str) -> None:
+        """Append a system/status line, e.g. the result of a slash command."""
+        self._close_agent_message()
+        self._message_count += 1
+        message_index = self._message_count - 1
+        body = Text()
+        body.append('[sys] ', Style(bold=True, color='#808080'))
+        body.append(text, Style(dim=True, color='#e0e0e0'))
+        body.append(
+            ' [copy]',
+            Style(color='#4FC1FF', meta={'@click': f'copy_message({message_index})'}),
+        )
+        start = len(self.lines)
+        self.write(body)
+        end = len(self.lines)
+        if end > start:
+            self._message_spans.append((start, end))
+            self._message_texts.append(f'[sys] {text}')
+        self.scroll_end(animate=False)
+
     def clear(self) -> 'MessagePane':
         """Clear the log and any active selection."""
         self._close_agent_message()
@@ -343,6 +363,8 @@ class MessagePane(RichLog):
         if not self._has_selection:
             return ''
         start, end = self._selection_start, self._selection_end
+        if start is None or end is None:
+            return ''
         first_row = start[0]
         last_row = min(end[0], len(self.lines) - 1)
         if first_row > last_row:
@@ -431,13 +453,13 @@ class MessagePane(RichLog):
     def render_line(self, y: int) -> Strip:
         """Render line ``y``, overlaying the selection highlight if needed."""
         strip = super().render_line(y)
-        if not self._has_selection:
+        start, end = self._selection_start, self._selection_end
+        if start is None or end is None:
             return strip
         scroll_x, scroll_y = self.scroll_offset
         row = scroll_y + y
         if row >= len(self.lines):
             return strip
-        start, end = self._selection_start, self._selection_end
         if not (start[0] <= row <= end[0]):
             return strip
         # Convert virtual columns to strip-local columns.

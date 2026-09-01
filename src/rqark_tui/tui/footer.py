@@ -6,6 +6,9 @@ from textual import events
 from textual.message import Message
 from textual.widgets import TextArea
 
+from rqark_tui.tui.commands import slash_matches
+from rqark_tui.tui.completion import CompletionPopup, FileMatcher
+
 # --- macOS physical modifier-state detection ---------------------------------
 # Same trick as `libs/tui/input.py` on Windows (GetAsyncKeyState), but for macOS:
 # query the current hardware key state via CoreGraphics, so Shift+Enter / Ctrl+Enter
@@ -95,11 +98,14 @@ class ChatInput(TextArea):
     def __init__(self, placeholder: str = 'Type a message… (Enter to send, Shift+Enter for newline)') -> None:
         super().__init__(soft_wrap=True, show_line_numbers=False, tab_behavior='indent')
         self.placeholder = placeholder
+        self._matcher = FileMatcher()
+        self._popup: CompletionPopup | None = None
         self._update_height()
 
     def on_text_area_changed(self, event: TextArea.Changed) -> None:
         """Grow/shrink the input height as the number of lines changes."""
         self._update_height()
+        self._update_completion()
 
     def _update_height(self) -> None:
         """Set the widget height to fit the content: 1 line by default, growing up to MAX_LINES.
@@ -110,6 +116,58 @@ class ChatInput(TextArea):
         """
         lines = min(max(self.document.line_count, 1), self.MAX_LINES)
         self.styles.height = lines + 2
+
+    def _query_popup(self) -> CompletionPopup | None:
+        if self._popup is None:
+            try:
+                self._popup = self.app.query_one(CompletionPopup)
+            except Exception:
+                return None
+        return self._popup
+
+    def _file_prefix(self) -> tuple[str, int | None]:
+        before = self.document.get_text_range((0, 0), self.cursor_location)
+        at_index = before.rfind('@')
+        if at_index < 0:
+            return '', None
+        if at_index > 0 and before[at_index - 1] not in ' \t\n':
+            return '', None
+        rest = before[at_index + 1:]
+        if any(char.isspace() for char in rest):
+            return '', None
+        return rest, at_index
+
+    def _update_completion(self) -> None:
+        popup = self._query_popup()
+        if popup is None:
+            return
+        prefix, at_index = self._file_prefix()
+        if at_index is not None:
+            popup.show([(display, value) for display, value, _ in self._matcher.matches(prefix)])
+            return
+        if self.document.line_count == 1 and self.text.startswith('/'):
+            popup.show([(name, name) for name in slash_matches(self.text)])
+            return
+        popup.hide()
+
+    def _select_completion(self) -> None:
+        popup = self._query_popup()
+        if popup is None or not popup.display:
+            return
+        entry = popup.selected_entry
+        if entry is None:
+            popup.hide()
+            return
+        _display, value = entry
+        prefix, at_index = self._file_prefix()
+        if at_index is not None:
+            head = self.document.get_text_range((0, 0), self.cursor_location)[:at_index]
+            row = head.count('\n')
+            col = len(head) - (head.rfind('\n') + 1)
+            self.replace(f'@{value} ', (row, col), self.cursor_location)
+        else:
+            self.replace(f'{value} ', (0, 0), self.cursor_location)
+        popup.hide()
 
     async def _on_key(self, event: events.Key) -> None:
         """Intercept Enter to submit, and let Shift/Ctrl+Enter insert newlines.
@@ -136,6 +194,23 @@ class ChatInput(TextArea):
             event.stop()
             event.prevent_default()
             return
+        popup = self._query_popup()
+        if popup is not None and popup.display:
+            if event.key in ('up', 'down', 'tab'):
+                event.stop()
+                event.prevent_default()
+                popup.move(1 if event.key != 'up' else -1)
+                return
+            if event.key == 'escape':
+                event.stop()
+                event.prevent_default()
+                popup.hide()
+                return
+            if event.key == 'enter':
+                event.stop()
+                event.prevent_default()
+                self._select_completion()
+                return
         if event.key == 'enter':
             event.stop()
             event.prevent_default()
@@ -156,5 +231,8 @@ class ChatInput(TextArea):
         text = self.text.strip('\n')
         if not text:
             return
+        popup = self._query_popup()
+        if popup is not None:
+            popup.hide()
         self.post_message(self.Submitted(self, text))
         self.clear()
