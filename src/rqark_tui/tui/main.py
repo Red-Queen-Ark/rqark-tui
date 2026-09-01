@@ -8,7 +8,7 @@ from textual.geometry import Offset
 from textual.strip import Strip
 from textual.widgets import RichLog
 
-from rqark_tui._tui.clipboard import write_system_clipboard
+from rqark_tui.tui.clipboard import write_system_clipboard
 
 #: Background colour used to paint the selected cells (macOS-dark-ish blue).
 _SELECTION_BG = '#2E5E8C'
