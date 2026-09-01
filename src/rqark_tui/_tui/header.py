@@ -20,6 +20,7 @@ class HeaderBar(Static):
 
     DEFAULT_CSS = """
     HeaderBar {
+        border: round #303030;
         height: 3;
         padding: 0 2;
         background: transparent;
