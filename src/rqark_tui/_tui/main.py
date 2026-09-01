@@ -11,6 +11,10 @@ class MessagePane(RichLog):
         padding: 1 2;
         background: #141414;
     }
+    MessagePane:focus {
+        background-tint: transparent;
+        border: round #303030;
+    }
     """
 
     def __init__(self, **kwargs) -> None:

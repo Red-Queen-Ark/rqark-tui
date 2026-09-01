@@ -16,6 +16,8 @@ _VK_LEFT_SHIFT = 56
 _VK_RIGHT_SHIFT = 60
 _VK_LEFT_CONTROL = 59
 _VK_RIGHT_CONTROL = 62
+_VK_RETURN = 36
+_VK_KEYPAD_ENTER = 76
 
 _cg_event_source_key_state: Callable[..., bool] | None = None
 
@@ -49,6 +51,11 @@ def _is_ctrl_pressed() -> bool:
     return _physical_key_down(_VK_LEFT_CONTROL) or _physical_key_down(_VK_RIGHT_CONTROL)
 
 
+def _is_return_pressed() -> bool:
+    """Return True if Return/Enter is physically held (macOS only; False elsewhere)."""
+    return _physical_key_down(_VK_RETURN) or _physical_key_down(_VK_KEYPAD_ENTER)
+
+
 class ChatInput(TextArea):
     """Multi-line input box that grows from 1 up to 10 lines.
 
@@ -71,9 +78,10 @@ class ChatInput(TextArea):
 
     DEFAULT_CSS = """
     ChatInput {
-        border: round #4FC1FF;
-        padding: 1 2;
-        background: #1e1e1e;
+        border: round #303030;
+        margin: 0 0;
+        padding: 0 2;
+        background: transparent;
         color: #e0e0e0;
     }
     ChatInput:focus {
@@ -97,10 +105,11 @@ class ChatInput(TextArea):
         """Set the widget height to fit the content: 1 line by default, growing up to MAX_LINES.
 
         The box model is border-box, so the total height also includes the
-        2 border rows and 2 padding rows.
+        2 border rows. Vertical padding is 0 (kept in sync with the CSS), so
+        the single-line input is as slim as the HeaderBar (height 3).
         """
         lines = min(max(self.document.line_count, 1), self.MAX_LINES)
-        self.styles.height = lines + 4
+        self.styles.height = lines + 2
 
     async def _on_key(self, event: events.Key) -> None:
         """Intercept Enter to submit, and let Shift/Ctrl+Enter insert newlines.
@@ -116,6 +125,17 @@ class ChatInput(TextArea):
         3. ``Ctrl+J`` sends a line feed byte (0x0A), which every terminal
            reports distinctly from Enter (0x0D).
         """
+        if event.key == 'circumflex_accent' and _is_return_pressed():
+            # Terminals that send ESC+CR / ESC+LF for a *modified* Enter (e.g.
+            # "Use Option as Meta", or a custom Shift+Enter binding) make Textual
+            # reissue the ESC byte as a phantom '^' key when the key auto-repeats,
+            # right before the real Enter/LF event. The physical Return key is
+            # held down during that repeat, but NOT when the user genuinely types
+            # '^' (Shift+6) — so this reliably distinguishes the two. Drop the
+            # phantom; the Enter/LF event that follows decides newline vs submit.
+            event.stop()
+            event.prevent_default()
+            return
         if event.key == 'enter':
             event.stop()
             event.prevent_default()

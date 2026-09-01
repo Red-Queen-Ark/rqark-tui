@@ -41,5 +41,5 @@ class HeaderBar(Static):
         version_part = f'[#808080]v{version_str}[/]'
         agent = f'[#808080]Agent:[/] [#A020F0]{self.agent_name or "-"}[/]'
         model = f'[#808080]Model:[/] [#4FC1FF]{self.model_name or "-"}[/]'
-        session = f'[#808080]Title:[/] {self.session_title or "(untitled)"}'
+        session = f'[#808080]Title:[/] [#e0e0e0]{self.session_title or "-"}[/]'
         return f'[b]{title} {version_part} | {agent} | {model} | {session}[/b]'
