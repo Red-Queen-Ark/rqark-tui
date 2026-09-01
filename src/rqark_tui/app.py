@@ -1,17 +1,16 @@
-from textual import events
 from textual.app import App, ComposeResult
 
 from rqark_tui._tui.footer import ChatInput
 from rqark_tui._tui.header import HeaderBar
 from rqark_tui._tui.main import MessagePane
+from rqark_tui._tui.quit_handler import QuitHandler
 
 
-class AgentTUI(App):
-    ESCAPE_EXIT_COUNT = 3
+class AgentTUI(QuitHandler, App):
+    """The rqark TUI: header bar, scrollable message pane and chat input."""
 
     def __init__(self):
         super().__init__()
-        self._escape_presses = 0
 
     def compose(self) -> ComposeResult:
         yield HeaderBar()
@@ -24,14 +23,6 @@ class AgentTUI(App):
     def on_chat_input_submitted(self, event: ChatInput.Submitted) -> None:
         """Show a submitted message in the main pane."""
         self.query_one(MessagePane).append_message(event.text)
-
-    def on_key(self, event: events.Key) -> None:
-        if event.key == 'escape':
-            self._escape_presses += 1
-            if self._escape_presses >= self.ESCAPE_EXIT_COUNT:
-                self.exit()
-        else:
-            self._escape_presses = 0
 
     def set_agent_name(self, name: str) -> None:
         self.query_one(HeaderBar).agent_name = name
