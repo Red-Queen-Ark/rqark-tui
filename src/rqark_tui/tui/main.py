@@ -2,7 +2,6 @@ from rich.cells import cell_len
 from rich.segment import Segment
 from rich.style import Style
 from rich.text import Text
-
 from textual import events
 from textual.geometry import Offset
 from textual.strip import Strip
@@ -107,6 +106,11 @@ class MessagePane(RichLog):
         self._selection_start: tuple[int, int] | None = None
         self._selection_end: tuple[int, int] | None = None
         self._selection_anchor: tuple[int, int] | None = None
+        self._agent_start: int | None = None
+        self._agent_index = 0
+        self._agent_mode = ''
+        self._agent_text = ''
+        self._agent_sender = ''
 
     # --- message appending -------------------------------------------------
 
@@ -117,6 +121,7 @@ class MessagePane(RichLog):
         style meta) that copies the whole message — a VS Code-proof fallback
         that doesn't rely on Ctrl+C reaching the app.
         """
+        self._close_agent_message()
         self._message_count += 1
         message_index = self._message_count - 1
         content = Text()
@@ -136,8 +141,140 @@ class MessagePane(RichLog):
             self._message_texts.append(f'you #{self._message_count}\n{text}')
         self.scroll_end(animate=False)
 
+    def append_agent_delta(self, sender: str, text: str) -> None:
+        self._append_delta('content', sender, text)
+
+    def append_think_delta(self, text: str) -> None:
+        self._append_delta('think', 'think', text)
+
+    def close_agent_message(self) -> None:
+        self._close_agent_message()
+
+    def _append_delta(self, mode: str, sender: str, text: str) -> None:
+        if self._agent_start is not None and self._agent_mode == mode:
+            self._agent_text += text
+        else:
+            self._close_agent_message()
+            self._message_count += 1
+            self._agent_index = self._message_count - 1
+            self._agent_sender = sender
+            self._agent_text = text
+            self._agent_mode = mode
+            self._agent_start = len(self.lines)
+        self._write_agent_block()
+
+    def _close_agent_message(self) -> None:
+        self._agent_start = None
+        self._agent_index = 0
+        self._agent_mode = ''
+        self._agent_text = ''
+        self._agent_sender = ''
+
+    def _write_agent_block(self) -> None:
+        if self._agent_start is None:
+            return
+        del self.lines[self._agent_start:]
+        self._line_cache.clear()
+        content = Text()
+        if self._agent_mode == 'think':
+            label = 'think'
+            content.append(f'{label} ', Style(bold=True, color='#808080'))
+            content.append(f'#{self._agent_index + 1}', Style(dim=True))
+            content.append(
+                ' [copy]',
+                Style(color='#4FC1FF', meta={'@click': f'copy_message({self._agent_index})'}),
+            )
+            content.append('\n')
+            content.append(self._agent_text, Style(dim=True, italic=True, color='#808080'))
+        else:
+            label = self._agent_sender
+            content.append(f'{label} ', Style(bold=True, color='#A020F0'))
+            content.append(f'#{self._agent_index + 1}', Style(dim=True))
+            content.append(
+                ' [copy]',
+                Style(color='#4FC1FF', meta={'@click': f'copy_message({self._agent_index})'}),
+            )
+            content.append('\n')
+            content.append(self._agent_text)
+        self.write(content)
+        end = len(self.lines)
+        message_text = f'{label} #{self._agent_index + 1}\n{self._agent_text}'
+        if self._message_spans and self._message_spans[-1][0] == self._agent_start:
+            self._message_spans[-1] = (self._agent_start, end)
+            self._message_texts[-1] = message_text
+        else:
+            self._message_spans.append((self._agent_start, end))
+            self._message_texts.append(message_text)
+        self.scroll_end(animate=False)
+
+    def append_tool_call(self, name: str, arguments: str) -> None:
+        self._close_agent_message()
+        self._message_count += 1
+        message_index = self._message_count - 1
+        content = Text()
+        content.append('[tool] ', Style(bold=True, color='#4FC1FF'))
+        content.append(name, Style(color='#4FC1FF'))
+        content.append(f' {arguments}', Style(dim=True, color='#4FC1FF'))
+        content.append(
+            ' [copy]',
+            Style(color='#4FC1FF', meta={'@click': f'copy_message({message_index})'}),
+        )
+        start = len(self.lines)
+        self.write(content)
+        end = len(self.lines)
+        if end > start:
+            self._message_spans.append((start, end))
+            self._message_texts.append(f'[tool] {name} {arguments}')
+        self.scroll_end(animate=False)
+
+    def append_tool_result(self, name: str, content: str) -> None:
+        self._close_agent_message()
+        self._message_count += 1
+        message_index = self._message_count - 1
+        text = content.strip().replace('\n', ' ')
+        if len(text) > 160:
+            text = f'{text[:160]}…'
+        body = Text()
+        body.append('[ok] ', Style(bold=True, color='#2E8B57'))
+        body.append(name, Style(color='#2E8B57'))
+        body.append(f' {text}', Style(dim=True, color='#2E8B57'))
+        body.append(
+            ' [copy]',
+            Style(color='#4FC1FF', meta={'@click': f'copy_message({message_index})'}),
+        )
+        start = len(self.lines)
+        self.write(body)
+        end = len(self.lines)
+        if end > start:
+            self._message_spans.append((start, end))
+            self._message_texts.append(f'[ok] {name} {text}')
+        self.scroll_end(animate=False)
+
+    def append_error(self, text: str) -> None:
+        entry = f'[error] {text}'
+        if self._message_texts and self._message_texts[-1] == entry:
+            return
+        self._close_agent_message()
+        self._message_count += 1
+        message_index = self._message_count - 1
+        body = Text()
+        body.append('[error] ', Style(bold=True, color='#DC143C'))
+        body.append(text, Style(dim=True, color='#DC143C'))
+        body.append(
+            ' [copy]',
+            Style(color='#4FC1FF', meta={'@click': f'copy_message({message_index})'}),
+        )
+        start = len(self.lines)
+        self.write(body)
+        end = len(self.lines)
+        if end > start:
+            self._message_spans.append((start, end))
+            self._message_texts.append(entry)
+        self.scroll_end(animate=False)
+
     def clear(self) -> 'MessagePane':
         """Clear the log and any active selection."""
+        self._close_agent_message()
         self._clear_selection()
         self._message_spans.clear()
         self._message_texts.clear()
