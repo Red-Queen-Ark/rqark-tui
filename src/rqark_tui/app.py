@@ -12,9 +12,6 @@ class AgentTUI(App):
     def __init__(self):
         super().__init__()
         self._escape_presses = 0
-        self._agent_name = ''
-        self._model_name = ''
-        self._session_title = ''
 
     def compose(self) -> ComposeResult:
         yield HeaderBar()
@@ -37,13 +34,10 @@ class AgentTUI(App):
             self._escape_presses = 0
 
     def set_agent_name(self, name: str) -> None:
-        self._agent_name = name
         self.query_one(HeaderBar).agent_name = name
 
     def set_model_name(self, name: str) -> None:
-        self._model_name = name
         self.query_one(HeaderBar).model_name = name
 
     def set_session_title(self, title: str) -> None:
-        self._session_title = title
         self.query_one(HeaderBar).session_title = title
