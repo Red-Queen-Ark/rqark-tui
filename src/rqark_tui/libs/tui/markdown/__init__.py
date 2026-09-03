@@ -2,6 +2,7 @@ import re
 
 HR_MAX_WIDTH = 72
 from rqark_tui.libs.tui.ansi import _C, term_width
+
 from .highlight import highlight as _hl
 from .markdown_table import TableRenderer
 
