@@ -11,17 +11,20 @@ from rqark_core.types.chat import Chunk, Message, ToolMessage
 from rqark_core.types.event import AgentPayload
 from rqark_core.types.tool import PlanItem
 
+from rqark_tui.config.manager import ConfigManager
 from rqark_tui.libs.dir_cache import DirCache
 from rqark_tui.tui import AgentTUI
 from rqark_tui.tui.commands import COMMANDS
-from rqark_tui.config.manager import ConfigManager
 
-def main() -> None:
-    config_mgr = ConfigManager('./.rqark/config')
+
+async def run() -> None:
+    config_mgr = ConfigManager('./.rqark')
     config_mgr.load()
-    # asyncio.run(_main())
-
-
+    storage = JSONLStorage(config_mgr.config_path / 'sessions')
+    app = AgentApp(config_mgr.providers, storage)
+    await app.session_mgr.load()
+    tui = AgentTUI()
+    
 def _resolve_provider_index(provider_mgr: ProviderManager, arg: str) -> int | None:
     if arg.isdigit():
         index = int(arg)
@@ -33,17 +36,7 @@ def _resolve_provider_index(provider_mgr: ProviderManager, arg: str) -> int | No
 
 
 async def _main() -> None:
-    providers = [
-        Provider(
-            'gemma4:e4b-mlx',
-            '-',
-            'http://127.0.0.1:11434/v1',
-            -1,
-            combine=True,
-            thinking='disabled',
-        ),
-    ]
-    app = AgentApp(providers, JSONLStorage(Path.home() / '.rqark' / 'sessions'))
+    app = AgentApp([], JSONLStorage(Path.home() / '.rqark' / 'sessions'))
     try:
         await app.session_mgr.load()
     except Exception:
@@ -169,4 +162,4 @@ async def _main() -> None:
 
 
 if __name__ == '__main__':
-    main()
+    asyncio.run(run())
