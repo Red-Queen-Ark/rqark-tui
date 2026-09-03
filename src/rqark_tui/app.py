@@ -14,10 +14,12 @@ from rqark_core.types.tool import PlanItem
 from rqark_tui.libs.dir_cache import DirCache
 from rqark_tui.tui import AgentTUI
 from rqark_tui.tui.commands import COMMANDS
-
+from rqark_tui.config.manager import ConfigManager
 
 def main() -> None:
-    asyncio.run(_main())
+    config_mgr = ConfigManager('./.rqark/config')
+    config_mgr.load()
+    # asyncio.run(_main())
 
 
 def _resolve_provider_index(provider_mgr: ProviderManager, arg: str) -> int | None:
