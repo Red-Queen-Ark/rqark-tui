@@ -11,7 +11,7 @@ from textual import events
 from textual.actions import SkipAction
 from textual.binding import Binding, BindingsMap
 
-from rqark_tui.tui.dialog import YesNoDialog
+from rqark_tui.tui.components.dialog import YesNoDialog
 
 if TYPE_CHECKING:
     from textual.app import App

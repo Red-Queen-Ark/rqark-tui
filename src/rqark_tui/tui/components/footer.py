@@ -7,7 +7,7 @@ from textual.message import Message
 from textual.widgets import TextArea
 
 from rqark_tui.tui.commands import slash_matches
-from rqark_tui.tui.completion import CompletionPopup, FileMatcher
+from rqark_tui.tui.components.completion import CompletionPopup, FileMatcher
 
 # --- macOS physical modifier-state detection ---------------------------------
 # Same trick as `libs/tui/input.py` on Windows (GetAsyncKeyState), but for macOS:

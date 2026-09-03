@@ -4,12 +4,12 @@ from rqark_core.types.tool import PlanItem
 from textual.app import App, ComposeResult
 from textual.worker import Worker
 
-from rqark_tui.tui.completion import CompletionPopup, expand_file_refs
-from rqark_tui.tui.footer import ChatInput
-from rqark_tui.tui.header import HeaderBar
-from rqark_tui.tui.main import MessagePane
-from rqark_tui.tui.plan import PlanPanel
-from rqark_tui.tui.quit_handler import QuitHandler
+from rqark_tui.tui.components.completion import CompletionPopup, expand_file_refs
+from rqark_tui.tui.components.footer import ChatInput
+from rqark_tui.tui.components.header import HeaderBar
+from rqark_tui.tui.components.main import MessagePane
+from rqark_tui.tui.components.plan import PlanPanel
+from rqark_tui.tui.components.quit_handler import QuitHandler
 
 
 class AgentTUI(QuitHandler, App):
