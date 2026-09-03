@@ -1,0 +1,37 @@
+{
+  /*
+  * BASE
+  */
+  "files.encoding": "utf8",
+  "editor.linkedEditing": true, // 使得同時編輯相同變數或符號更容易。
+  "editor.bracketPairColorization.enabled": true, // 啟用括號配對著色功能。
+  "editor.guides.bracketPairs": true, // 在括號間顯示視覺導引線
+  "explorer.compactFolders": false,
+  /*
+  * GIT
+  */
+  "git.autofetch": true,
+  "git.enableSmartCommit": true,
+  "git.confirmSync": false,
+  /*
+  * PYTHON
+  */
+  "python.analysis.inlayHints.callArgumentNames": "partial",
+  "python.analysis.inlayHints.functionReturnTypes": true,
+  "python.analysis.inlayHints.pytestParameters": true,
+  "python.analysis.inlayHints.variableTypes": true,
+  "python.analysis.autoSearchPaths": true,
+  "python.analysis.autoIndent": true,
+  "python.analysis.autoFormatStrings": true, // 在字串內輸入“{”時，是否自動加上“f”前綴。
+  "python.analysis.completeFunctionParens": true,
+  "python.analysis.typeEvaluation.analyzeUnannotatedFunctions": true, // 為函數補全添加括號。
+  "python.analysis.typeEvaluation.strictSetInference": true,
+  "python.analysis.includeAliasesFromUserFiles": false,
+  "python.analysis.typeCheckingMode": "basic",
+  "python.analysis.typeEvaluation.strictDictionaryInference": true,
+  "python.analysis.typeEvaluation.strictListInference": true,
+  /*
+  * JUPYTER
+  */
+  "jupyter.exportWithOutputEnabled": false,
+}
