@@ -1,7 +1,8 @@
+from asyncio import AbstractEventLoop
 from collections.abc import Awaitable, Callable
 
 from rqark_core.types.tool import PlanItem
-from textual.app import App, ComposeResult
+from textual.app import App, AutopilotCallbackType, ComposeResult
 from textual.worker import Worker
 
 from rqark_tui.tui.components.completion import CompletionPopup, expand_file_refs
@@ -14,6 +15,26 @@ from rqark_tui.tui.components.quit_handler import QuitHandler
 
 class AgentTUI(QuitHandler, App):
     """The rqark TUI: header bar, message pane, plan panel, completion popup and chat input."""
+
+    async def run(
+        self,
+        *,
+        headless: bool = False,
+        inline: bool = False,
+        inline_no_clear: bool = False,
+        mouse: bool = True,
+        size: tuple[int, int] | None = None,
+        auto_pilot: AutopilotCallbackType | None = None,
+        loop: AbstractEventLoop | None = None,
+    ) -> None:
+        await super().run_async(
+            headless=headless,
+            inline=inline,
+            inline_no_clear=inline_no_clear,
+            mouse=mouse,
+            size=size,
+            auto_pilot=auto_pilot,
+        )
 
     def __init__(self):
         super().__init__()
