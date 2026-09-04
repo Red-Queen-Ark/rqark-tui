@@ -7,6 +7,7 @@ from rqark_core.types.provider import Provider
 from rqark_tui.config.default import AGENTS, PROVIDERS
 from rqark_tui.utils.io import IoHelper
 
+
 class ConfigManager:
     def __init__(self, config_path: str):
         self.io_helper = IoHelper()

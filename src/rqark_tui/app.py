@@ -2,7 +2,7 @@ import asyncio
 from pathlib import Path
 
 from rqark_app.agent.agents import AgentHoliday, Diana, Wednesday
-from rqark_app.app import AgentApp, Provider
+from rqark_app.app import AgentApp
 from rqark_app.provider.manager import ProviderManager
 from rqark_app.session.storage import JSONLStorage
 from rqark_app.types.agent import BaseAgent
@@ -24,7 +24,7 @@ async def run() -> None:
     app = AgentApp(config_mgr.providers, storage)
     await app.session_mgr.load()
     tui = AgentTUI()
-    
+
 def _resolve_provider_index(provider_mgr: ProviderManager, arg: str) -> int | None:
     if arg.isdigit():
         index = int(arg)
