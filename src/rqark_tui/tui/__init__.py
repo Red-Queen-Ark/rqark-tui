@@ -1,6 +1,8 @@
 from asyncio import AbstractEventLoop
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Sequence
 
+from rqark_app.types.session import SummaryMessage
+from rqark_core.types.chat import AssistantMessage, Message, SystemMessage, ToolMessage, UserMessage
 from textual.app import App, AutopilotCallbackType, ComposeResult
 from textual.worker import Worker
 
@@ -42,6 +44,7 @@ class AgentTUI(QuitHandler, App):
         self._chat_handler: Callable[[str], Awaitable[None]] | None = None
         self._chat_worker: Worker | None = None
         self._chat_busy = False
+        self._restore_messages: Sequence[Message | SummaryMessage] | None = None
 
     def compose(self) -> ComposeResult:
         yield HeaderBar()
@@ -56,6 +59,7 @@ class AgentTUI(QuitHandler, App):
         header.model_name = self._model_name
         header.session_title = self._session_title
         self.query_one(ChatInput).focus()
+        self._replay_restored_messages()
 
     def set_agent_name(self, name: str) -> None:
         self._agent_name = name
@@ -74,6 +78,35 @@ class AgentTUI(QuitHandler, App):
 
     def set_chat_handler(self, handler: Callable[[str], Awaitable[None]]) -> None:
         self._chat_handler = handler
+
+    def restore_session(self, messages: Sequence[Message | SummaryMessage]) -> None:
+        self._restore_messages = messages
+        if self.is_running:
+            self._replay_restored_messages()
+
+    def _replay_restored_messages(self) -> None:
+        messages, self._restore_messages = self._restore_messages, None
+        if not messages:
+            return
+        for m in messages:
+            if isinstance(m, (SummaryMessage, SystemMessage)):
+                self.append_system(m.content)
+            elif isinstance(m, UserMessage):
+                self.append_message(m.content)
+            elif isinstance(m, AssistantMessage):
+                if m.reasoning_content:
+                    self.append_think_delta(m.reasoning_content)
+                    self.close_agent_message()
+                if m.content:
+                    self.append_agent_delta(m.content)
+                    self.close_agent_message()
+                for call in m.tool_calls or []:
+                    self.append_tool_call(call.name, call.arguments)
+            elif isinstance(m, ToolMessage):
+                self.append_tool_result(m.tool_name or '', m.content)
+
+    def append_message(self, text: str) -> None:
+        self.query_one(MessagePane).append_message(text)
 
     def append_agent_delta(self, text: str) -> None:
         self.query_one(MessagePane).append_agent_delta(self._agent_name, text)
@@ -109,7 +142,7 @@ class AgentTUI(QuitHandler, App):
         if self._chat_busy:
             self.notify('Still processing — please wait', severity='warning', timeout=4)
             return
-        self.query_one(MessagePane).append_message(text)
+        self.append_message(text)
         if self._chat_handler is None:
             return
         self._chat_busy = True

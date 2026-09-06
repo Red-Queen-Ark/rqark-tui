@@ -76,6 +76,10 @@ async def _main() -> None:
             task.add_done_callback(title_tasks.discard)
 
     tui.set_chat_handler(chat_handler)
+    session = await app.session_mgr.get(session_id) if session_id is not None else None
+    if session is not None:
+        tui.set_session_title(session.title)
+        tui.restore_session(session.get_last_chunk())
     await tui.run()
 
 
