@@ -1,7 +1,6 @@
 from asyncio import AbstractEventLoop
 from collections.abc import Awaitable, Callable
 
-from rqark_core.types.tool import PlanItem
 from textual.app import App, AutopilotCallbackType, ComposeResult
 from textual.worker import Worker
 
@@ -9,12 +8,11 @@ from rqark_tui.tui.components.completion import CompletionPopup, expand_file_ref
 from rqark_tui.tui.components.footer import ChatInput
 from rqark_tui.tui.components.header import HeaderBar
 from rqark_tui.tui.components.main import MessagePane
-from rqark_tui.tui.components.plan import PlanPanel
 from rqark_tui.tui.components.quit_handler import QuitHandler
 
 
 class AgentTUI(QuitHandler, App):
-    """The rqark TUI: header bar, message pane, plan panel, completion popup and chat input."""
+    """The rqark TUI: header bar, message pane, completion popup and chat input."""
 
     async def run(
         self,
@@ -41,7 +39,6 @@ class AgentTUI(QuitHandler, App):
         self._agent_name = ''
         self._model_name = ''
         self._session_title = ''
-        self._plan_items: list[PlanItem] = []
         self._chat_handler: Callable[[str], Awaitable[None]] | None = None
         self._chat_worker: Worker | None = None
         self._chat_busy = False
@@ -49,7 +46,6 @@ class AgentTUI(QuitHandler, App):
     def compose(self) -> ComposeResult:
         yield HeaderBar()
         yield MessagePane()
-        yield PlanPanel()
         yield CompletionPopup()
         yield ChatInput()
 
@@ -59,7 +55,6 @@ class AgentTUI(QuitHandler, App):
         header.agent_name = self._agent_name
         header.model_name = self._model_name
         header.session_title = self._session_title
-        self.query_one(PlanPanel).set_plan(self._plan_items)
 
     def set_agent_name(self, name: str) -> None:
         self._agent_name = name
@@ -75,11 +70,6 @@ class AgentTUI(QuitHandler, App):
         self._session_title = title
         if self.is_running:
             self.query_one(HeaderBar).session_title = title
-
-    def set_plan(self, items: list[PlanItem]) -> None:
-        self._plan_items = list(items)
-        if self.is_running:
-            self.query_one(PlanPanel).set_plan(items)
 
     def set_chat_handler(self, handler: Callable[[str], Awaitable[None]]) -> None:
         self._chat_handler = handler
@@ -107,7 +97,6 @@ class AgentTUI(QuitHandler, App):
 
     def clear_messages(self) -> None:
         self.query_one(MessagePane).clear()
-        self.query_one(PlanPanel).set_plan([])
 
     def cancel_chat(self) -> None:
         worker = self._chat_worker
