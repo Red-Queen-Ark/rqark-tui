@@ -6,7 +6,6 @@ from textual import events
 from textual.message import Message
 from textual.widgets import TextArea
 
-from rqark_tui.tui.commands import slash_matches
 from rqark_tui.tui.components.completion import CompletionPopup, FileMatcher
 
 # --- macOS physical modifier-state detection ---------------------------------
@@ -145,9 +144,6 @@ class ChatInput(TextArea):
         if at_index is not None:
             popup.show([(display, value) for display, value, _ in self._matcher.matches(prefix)])
             return
-        if self.document.line_count == 1 and self.text.startswith('/'):
-            popup.show([(name, name) for name in slash_matches(self.text)])
-            return
         popup.hide()
 
     def _select_completion(self) -> None:
@@ -160,13 +156,13 @@ class ChatInput(TextArea):
             return
         _display, value = entry
         prefix, at_index = self._file_prefix()
-        if at_index is not None:
-            head = self.document.get_text_range((0, 0), self.cursor_location)[:at_index]
-            row = head.count('\n')
-            col = len(head) - (head.rfind('\n') + 1)
-            self.replace(f'@{value} ', (row, col), self.cursor_location)
-        else:
-            self.replace(f'{value} ', (0, 0), self.cursor_location)
+        if at_index is None:
+            popup.hide()
+            return
+        head = self.document.get_text_range((0, 0), self.cursor_location)[:at_index]
+        row = head.count('\n')
+        col = len(head) - (head.rfind('\n') + 1)
+        self.replace(f'@{value} ', (row, col), self.cursor_location)
         popup.hide()
 
     async def _on_key(self, event: events.Key) -> None:
