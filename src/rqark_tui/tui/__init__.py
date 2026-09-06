@@ -1,5 +1,6 @@
 from asyncio import AbstractEventLoop
 from collections.abc import Awaitable, Callable, Sequence
+from datetime import datetime
 
 from rqark_app.types.session import SummaryMessage
 from rqark_core.types.chat import AssistantMessage, Message, SystemMessage, ToolMessage, UserMessage
@@ -45,6 +46,7 @@ class AgentTUI(QuitHandler, App):
         self._chat_worker: Worker | None = None
         self._chat_busy = False
         self._restore_messages: Sequence[Message | SummaryMessage] | None = None
+        self._restore_at: datetime | None = None
 
     def compose(self) -> ComposeResult:
         yield HeaderBar()
@@ -79,55 +81,58 @@ class AgentTUI(QuitHandler, App):
     def set_chat_handler(self, handler: Callable[[str], Awaitable[None]]) -> None:
         self._chat_handler = handler
 
-    def restore_session(self, messages: Sequence[Message | SummaryMessage]) -> None:
+    def restore_session(self, messages: Sequence[Message | SummaryMessage], at: datetime | None = None) -> None:
         self._restore_messages = messages
+        self._restore_at = at
         if self.is_running:
             self._replay_restored_messages()
 
     def _replay_restored_messages(self) -> None:
         messages, self._restore_messages = self._restore_messages, None
+        at, self._restore_at = self._restore_at, None
         if not messages:
             return
         for m in messages:
             if isinstance(m, (SummaryMessage, SystemMessage)):
-                self.append_system(m.content)
+                self.append_system(m.content, at)
             elif isinstance(m, UserMessage):
-                self.append_message(m.content)
+                self.append_message(m.content, at)
             elif isinstance(m, AssistantMessage):
                 if m.reasoning_content:
-                    self.append_think_delta(m.reasoning_content)
-                    self.close_agent_message()
+                    self.append_think_delta(m.reasoning_content, at)
                 if m.content:
-                    self.append_agent_delta(m.content)
+                    self.append_agent_delta(m.content, at)
+                if m.tool_calls:
+                    for call in m.tool_calls:
+                        self.append_tool_call(call.name, call.arguments, at)
+                else:
                     self.close_agent_message()
-                for call in m.tool_calls or []:
-                    self.append_tool_call(call.name, call.arguments)
             elif isinstance(m, ToolMessage):
-                self.append_tool_result(m.tool_name or '', m.content)
+                self.append_tool_result(m.tool_name or '', m.content, at)
 
-    def append_message(self, text: str) -> None:
-        self.query_one(MessagePane).append_message(text)
+    def append_message(self, text: str, at: datetime | None = None) -> None:
+        self.query_one(MessagePane).append_message(text, at)
 
-    def append_agent_delta(self, text: str) -> None:
-        self.query_one(MessagePane).append_agent_delta(self._agent_name, text)
+    def append_agent_delta(self, text: str, at: datetime | None = None) -> None:
+        self.query_one(MessagePane).append_agent_delta(text, at)
 
-    def append_think_delta(self, text: str) -> None:
-        self.query_one(MessagePane).append_think_delta(text)
+    def append_think_delta(self, text: str, at: datetime | None = None) -> None:
+        self.query_one(MessagePane).append_think_delta(text, at)
 
     def close_agent_message(self) -> None:
         self.query_one(MessagePane).close_agent_message()
 
-    def append_tool_call(self, name: str, arguments: str) -> None:
-        self.query_one(MessagePane).append_tool_call(name, arguments)
+    def append_tool_call(self, name: str, arguments: str, at: datetime | None = None) -> None:
+        self.query_one(MessagePane).append_tool_call(name, arguments, at)
 
-    def append_tool_result(self, name: str, content: str) -> None:
-        self.query_one(MessagePane).append_tool_result(name, content)
+    def append_tool_result(self, name: str, content: str, at: datetime | None = None) -> None:
+        self.query_one(MessagePane).append_tool_result(name, content, at)
 
-    def append_error(self, text: str) -> None:
-        self.query_one(MessagePane).append_error(text)
+    def append_error(self, text: str, at: datetime | None = None) -> None:
+        self.query_one(MessagePane).append_error(text, at)
 
-    def append_system(self, text: str) -> None:
-        self.query_one(MessagePane).append_system(text)
+    def append_system(self, text: str, at: datetime | None = None) -> None:
+        self.query_one(MessagePane).append_system(text, at)
 
     def clear_messages(self) -> None:
         self.query_one(MessagePane).clear()

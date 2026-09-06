@@ -1,3 +1,6 @@
+from dataclasses import dataclass, field
+from datetime import datetime
+
 from rich.cells import cell_len
 from rich.segment import Segment
 from rich.style import Style
@@ -14,6 +17,32 @@ _SELECTION_BG = '#2E5E8C'
 
 #: Sentinel column meaning "to the end of the line" (used for select-all).
 _END_OF_LINE = 10**9
+
+_LABEL_COLORS = {
+    'user': '#DC143C',
+    'agent': '#A020F0',
+    'tools': '#A020F0',
+    'system': '#808080',
+}
+
+_ACCENT = '#4FC1FF'
+
+
+@dataclass
+class _Section:
+    mode: str
+    name: str
+    text: str = ''
+    collapsed: bool = False
+
+
+@dataclass
+class _Block:
+    kind: str
+    time: str
+    sections: list[_Section] = field(default_factory=list)
+    open: bool = True
+    start: int = 0
 
 
 def _crop_plain(text: str, start_cell: int, end_cell: int) -> str:
@@ -69,12 +98,10 @@ def _apply_selection_style(strip: Strip, start: int, end: int) -> Strip:
 class MessagePane(RichLog):
     """Scrollable message area showing the submitted messages.
 
-    Supports normal copy-paste behaviour:
-
-    - Drag with the mouse to select text (highlighted in blue).
-    - ``Ctrl+C`` copies the selection to both the in-app clipboard and the
-      OS clipboard (so it can be pasted into other applications).
-    - ``Ctrl+A`` selects the whole log.
+    Each message gets a header row (``User`` / ``Agent`` / ``System``) with the
+    timestamp and a ``[copy]`` button right-aligned, followed by the body.
+    Reasoning and tool results render as collapsible accordions (expanded by
+    default). Mouse selection / Ctrl+C / Ctrl+A copy behaviour is preserved.
     """
 
     DEFAULT_CSS = """
@@ -95,10 +122,9 @@ class MessagePane(RichLog):
         # pane (no horizontal scrolling), which keeps them fully selectable
         # and copyable.
         super().__init__(wrap=True, min_width=1, **kwargs)
-        self._message_count = 0
-        # Per appended message: the row range it occupies in `self.lines` and
-        # its original plain text. Used to reconstruct wrapped lines without
-        # inserting artificial newlines when copying a whole message.
+        # Per appended message block: its row range in `self.lines` and the
+        # plain text used by the whole-message [copy] button / selection.
+        self._blocks: list[_Block] = []
         self._message_spans: list[tuple[int, int]] = []
         self._message_texts: list[str] = []
         # Selection state in virtual coordinates: (row, col) where row is the
@@ -106,207 +132,239 @@ class MessagePane(RichLog):
         self._selection_start: tuple[int, int] | None = None
         self._selection_end: tuple[int, int] | None = None
         self._selection_anchor: tuple[int, int] | None = None
-        self._agent_start: int | None = None
-        self._agent_index = 0
-        self._agent_mode = ''
-        self._agent_text = ''
-        self._agent_sender = ''
+        self._needs_initial_rebuild = True
+
+    def on_resize(self, event) -> None:
+        super().on_resize(event)
+        if self._needs_initial_rebuild and self._size_known:
+            self._needs_initial_rebuild = False
+            if self._blocks:
+                self._rebuild()
 
     # --- message appending -------------------------------------------------
 
-    def append_message(self, text: str) -> None:
-        """Append a submitted message to the pane.
+    @staticmethod
+    def _format_time(at: datetime | None) -> str:
+        if at is None:
+            at = datetime.now()
+        if at.tzinfo is not None:
+            at = at.astimezone()
+        return at.strftime('%Y-%m-%d %H:%M:%S')
 
-        Each message header carries a clickable ``[copy]`` button (``@click``
-        style meta) that copies the whole message — a VS Code-proof fallback
-        that doesn't rely on Ctrl+C reaching the app.
-        """
-        self._close_agent_message()
-        self._message_count += 1
-        message_index = self._message_count - 1
-        content = Text()
-        content.append('you ', Style(bold=True, color='#DC143C'))
-        content.append(f'#{self._message_count}', Style(dim=True))
-        content.append(
-            ' [copy]',
-            Style(color='#4FC1FF', meta={'@click': f'copy_message({message_index})'}),
-        )
-        content.append('\n')
-        content.append(text)  # Plain text: brackets in user text stay literal.
-        start = len(self.lines)
-        self.write(content)
-        end = len(self.lines)
-        if end > start:
-            self._message_spans.append((start, end))
-            self._message_texts.append(f'you #{self._message_count}\n{text}')
-        self.scroll_end(animate=False)
+    def append_message(self, text: str, at: datetime | None = None) -> None:
+        self._close_last()
+        self._new_block('user', at, [('body', '', text)])
+        self._rewrite_tail(len(self._blocks) - 1)
 
-    def append_agent_delta(self, sender: str, text: str) -> None:
-        self._append_delta('content', sender, text)
+    def append_agent_delta(self, text: str, at: datetime | None = None) -> None:
+        idx, block = self._open_agent(at)
+        if not block.sections or block.sections[-1].mode != 'body':
+            block.sections.append(_Section('body', '', ''))
+        block.sections[-1].text += text
+        self._rewrite_tail(idx)
 
-    def append_think_delta(self, text: str) -> None:
-        self._append_delta('think', 'think', text)
+    def append_think_delta(self, text: str, at: datetime | None = None) -> None:
+        idx, block = self._open_agent(at)
+        if block.sections and block.sections[0].mode == 'think':
+            block.sections[0].text += text
+        else:
+            block.sections.insert(0, _Section('think', 'thinking', text))
+        self._rewrite_tail(idx)
 
     def close_agent_message(self) -> None:
-        self._close_agent_message()
+        self._close_last()
 
-    def _append_delta(self, mode: str, sender: str, text: str) -> None:
-        if self._agent_start is not None and self._agent_mode == mode:
-            self._agent_text += text
+    def append_tool_call(self, name: str, arguments: str, at: datetime | None = None) -> None:
+        self._close_last()
+        if self._blocks and self._blocks[-1].kind == 'tools' and self._blocks[-1].open:
+            block = self._blocks[-1]
+            idx = len(self._blocks) - 1
         else:
-            self._close_agent_message()
-            self._message_count += 1
-            self._agent_index = self._message_count - 1
-            self._agent_sender = sender
-            self._agent_text = text
-            self._agent_mode = mode
-            self._agent_start = len(self.lines)
-        self._write_agent_block()
+            block = self._new_block('tools', at, [])
+            idx = len(self._blocks) - 1
+        key = len([s for s in block.sections if s.mode == 'tool']) + 1
+        block.sections.append(_Section('tool', name, f'[{key}]'))
+        self._rewrite_tail(idx)
 
-    def _close_agent_message(self) -> None:
-        self._agent_start = None
-        self._agent_index = 0
-        self._agent_mode = ''
-        self._agent_text = ''
-        self._agent_sender = ''
+    def append_tool_result(self, name: str, content: str, at: datetime | None = None) -> None:
+        if self._blocks and self._blocks[-1].kind == 'tools' and self._blocks[-1].open:
+            block = self._blocks[-1]
+            idx = len(self._blocks) - 1
+        else:
+            block = self._new_block('tools', at, [])
+            idx = len(self._blocks) - 1
+        block.sections.append(_Section('result', name or 'tool', content.strip()))
+        self._rewrite_tail(idx)
 
-    def _write_agent_block(self) -> None:
-        if self._agent_start is None:
+    def append_error(self, text: str, at: datetime | None = None) -> None:
+        self._close_last()
+        self._new_block('system', at, [('error', '', text)])
+        self._rewrite_tail(len(self._blocks) - 1)
+
+    def append_system(self, text: str, at: datetime | None = None) -> None:
+        self._close_last()
+        self._new_block('system', at, [('sys', '', text)])
+        self._rewrite_tail(len(self._blocks) - 1)
+
+    # --- block bookkeeping --------------------------------------------------
+
+    def _new_block(self, kind: str, at: datetime | None, sections: list[tuple[str, str, str]]) -> _Block:
+        block = _Block(kind, self._format_time(at))
+        for mode, name, text in sections:
+            block.sections.append(_Section(mode, name, text))
+        block.start = len(self.lines)
+        self._blocks.append(block)
+        return block
+
+    def _close_last(self) -> None:
+        if self._blocks and self._blocks[-1].open:
+            self._blocks[-1].open = False
+
+    def _last_agent(self) -> tuple[int, _Block] | None:
+        if not self._blocks:
+            return None
+        block = self._blocks[-1]
+        if not block.open or block.kind not in ('agent', 'tools'):
+            return None
+        if block.kind == 'tools':
+            return None
+        if any(s.mode == 'tool' for s in block.sections):
+            return None
+        return len(self._blocks) - 1, block
+
+    def _open_agent(self, at: datetime | None) -> tuple[int, _Block]:
+        last = self._last_agent()
+        if last is not None:
+            return last
+        self._close_last()
+        block = self._new_block('agent', at, [])
+        return len(self._blocks) - 1, block
+
+    def _rewrite_tail(self, idx: int) -> None:
+        if not self._size_known:
             return
-        del self.lines[self._agent_start:]
+        block = self._blocks[idx]
+        del self.lines[block.start:]
         self._line_cache.clear()
-        content = Text()
-        if self._agent_mode == 'think':
-            label = 'think'
-            content.append(f'{label} ', Style(bold=True, color='#808080'))
-            content.append(f'#{self._agent_index + 1}', Style(dim=True))
-            content.append(
-                ' [copy]',
-                Style(color='#4FC1FF', meta={'@click': f'copy_message({self._agent_index})'}),
-            )
-            content.append('\n')
-            content.append(self._agent_text, Style(dim=True, italic=True, color='#808080'))
-        else:
-            label = self._agent_sender
-            content.append(f'{label} ', Style(bold=True, color='#A020F0'))
-            content.append(f'#{self._agent_index + 1}', Style(dim=True))
-            content.append(
-                ' [copy]',
-                Style(color='#4FC1FF', meta={'@click': f'copy_message({self._agent_index})'}),
-            )
-            content.append('\n')
-            content.append(self._agent_text)
-        self.write(content)
-        end = len(self.lines)
-        message_text = f'{label} #{self._agent_index + 1}\n{self._agent_text}'
-        if self._message_spans and self._message_spans[-1][0] == self._agent_start:
-            self._message_spans[-1] = (self._agent_start, end)
-            self._message_texts[-1] = message_text
-        else:
-            self._message_spans.append((self._agent_start, end))
-            self._message_texts.append(message_text)
-        self.scroll_end(animate=False)
-
-    def append_tool_call(self, name: str, arguments: str) -> None:
-        self._close_agent_message()
-        self._message_count += 1
-        message_index = self._message_count - 1
-        content = Text()
-        content.append('[tool] ', Style(bold=True, color='#4FC1FF'))
-        content.append(name, Style(color='#4FC1FF'))
-        content.append(f' {arguments}', Style(dim=True, color='#4FC1FF'))
-        content.append(
-            ' [copy]',
-            Style(color='#4FC1FF', meta={'@click': f'copy_message({message_index})'}),
-        )
-        start = len(self.lines)
-        self.write(content)
-        end = len(self.lines)
-        if end > start:
-            self._message_spans.append((start, end))
-            self._message_texts.append(f'[tool] {name} {arguments}')
-        self.scroll_end(animate=False)
-
-    def append_tool_result(self, name: str, content: str) -> None:
-        self._close_agent_message()
-        self._message_count += 1
-        message_index = self._message_count - 1
-        text = content.strip().replace('\n', ' ')
-        if len(text) > 160:
-            text = f'{text[:160]}…'
-        body = Text()
-        body.append('[ok] ', Style(bold=True, color='#2E8B57'))
-        body.append(name, Style(color='#2E8B57'))
-        body.append(f' {text}', Style(dim=True, color='#2E8B57'))
-        body.append(
-            ' [copy]',
-            Style(color='#4FC1FF', meta={'@click': f'copy_message({message_index})'}),
-        )
-        start = len(self.lines)
-        self.write(body)
-        end = len(self.lines)
-        if end > start:
-            self._message_spans.append((start, end))
-            self._message_texts.append(f'[ok] {name} {text}')
-        self.scroll_end(animate=False)
-
-    def append_error(self, text: str) -> None:
-        entry = f'[error] {text}'
-        if self._message_texts and self._message_texts[-1] == entry:
-            return
-        self._close_agent_message()
-        self._message_count += 1
-        message_index = self._message_count - 1
-        body = Text()
-        body.append('[error] ', Style(bold=True, color='#DC143C'))
-        body.append(text, Style(dim=True, color='#DC143C'))
-        body.append(
-            ' [copy]',
-            Style(color='#4FC1FF', meta={'@click': f'copy_message({message_index})'}),
-        )
-        start = len(self.lines)
-        self.write(body)
-        end = len(self.lines)
-        if end > start:
-            self._message_spans.append((start, end))
-            self._message_texts.append(entry)
-        self.scroll_end(animate=False)
-
-    def append_system(self, text: str) -> None:
-        """Append a system/status line, e.g. the result of a slash command."""
-        self._close_agent_message()
-        self._message_count += 1
-        message_index = self._message_count - 1
-        body = Text()
-        body.append('[sys] ', Style(bold=True, color='#808080'))
-        body.append(text, Style(dim=True, color='#e0e0e0'))
-        body.append(
-            ' [copy]',
-            Style(color='#4FC1FF', meta={'@click': f'copy_message({message_index})'}),
-        )
-        start = len(self.lines)
-        self.write(body)
-        end = len(self.lines)
-        if end > start:
-            self._message_spans.append((start, end))
-            self._message_texts.append(f'[sys] {text}')
-        self.scroll_end(animate=False)
-
-    def clear(self) -> 'MessagePane':
-        """Clear the log and any active selection."""
-        self._close_agent_message()
+        del self._message_spans[idx:]
+        del self._message_texts[idx:]
+        self._emit_block(idx)
         self._clear_selection()
+
+    def _rebuild(self) -> None:
+        del self.lines[:]
+        self._line_cache.clear()
         self._message_spans.clear()
         self._message_texts.clear()
-        return super().clear()
+        for idx in range(len(self._blocks)):
+            block = self._blocks[idx]
+            block.start = len(self.lines)
+            self._emit_block(idx)
+        self._clear_selection()
 
-    # --- whole-message copy button -------------------------------------------
+    def _emit_block(self, idx: int) -> None:
+        block = self._blocks[idx]
+        start = len(self.lines)
+        rows = self._block_text(block, idx)
+        if rows:
+            self.write(rows, width=max(self.scrollable_content_region.width, 40))
+        end = len(self.lines)
+        if end > start:
+            self._message_spans.append((start, end))
+            self._message_texts.append(self._copy_text(block))
+        self.scroll_end(animate=False)
+
+    def _copy_text(self, block: _Block) -> str:
+        label = 'Agent' if block.kind in ('agent', 'tools') else block.kind.title()
+        parts = [label]
+        for section in block.sections:
+            if section.mode == 'tool':
+                parts.append(f'use tool {section.name} {section.text}')
+            elif section.text:
+                parts.append(section.text)
+        return '\n'.join(parts)
+
+    def _pad_to(self, width: int) -> int:
+        content = self.scrollable_content_region.width
+        if content < 10:
+            return max(width - 1, 0)
+        return max(content - width, 0)
+
+    def _block_text(self, block: _Block, idx: int) -> Text:
+        parts: list[Text] = []
+        label = 'Agent' if block.kind in ('agent', 'tools') else block.kind.title()
+        head = Text()
+        head.append(f'{label} ', Style(bold=True, color=_LABEL_COLORS.get(block.kind, '#808080')))
+        dt = block.time
+        head.append(' ' * self._pad_to(cell_len(label) + 1 + cell_len(dt) + len(' [copy]')))
+        head.append(dt, Style(dim=True, color='#808080'))
+        head.append(' [copy]', Style(color=_ACCENT, meta={'@click': f'copy_message({idx})'}))
+        parts.append(head)
+        for si, section in enumerate(block.sections):
+            if section.mode == 'body':
+                if section.text:
+                    parts.append(Text(section.text, style=Style(color='#ffffff')))
+            elif section.mode == 'think':
+                parts.append(self._accordion_row(section, idx, si))
+                if not section.collapsed and section.text:
+                    parts.append(Text(section.text, style=Style(dim=True, italic=True, color='#9a9a9a')))
+            elif section.mode == 'tool':
+                parts.append(self._tool_row(section))
+            elif section.mode == 'result':
+                parts.append(self._accordion_row(section, idx, si, prefix='tool result: '))
+                if not section.collapsed and section.text:
+                    parts.append(Text(section.text, style=Style(dim=True, color='#9e9e9e')))
+            elif section.mode == 'error':
+                if section.text:
+                    parts.append(Text(section.text, style=Style(color='#DC143C')))
+            else:
+                if section.text:
+                    parts.append(Text(section.text, style=Style(dim=True, color='#c0c0c0')))
+        text = Text()
+        for index, part in enumerate(parts):
+            text.append_text(part)
+            if index < len(parts) - 1:
+                text.append('\n')
+        return text
+
+    def _tool_row(self, section: _Section) -> Text:
+        row = Text()
+        row.append('use tool ', Style(color='#c8a000'))
+        row.append(section.name, Style(bold=True, color='#FFD700'))
+        row.append(f' {section.text}', Style(dim=True, color='#8a6d00'))
+        return row
+
+    def _accordion_row(self, section: _Section, idx: int, si: int, prefix: str = '') -> Text:
+        marker = '▶' if section.collapsed else '▼'
+        row = Text()
+        row.append(f'{marker} {prefix}{section.name}', Style(dim=True, color='#808080', meta={'@click': f'toggle_section({idx},{si})'}))
+        return row
 
     def action_copy_message(self, message_index: int) -> None:
         """Copy the whole message at ``message_index`` (invoked by the [copy] button)."""
         if 0 <= message_index < len(self._message_texts):
             self._copy_to_clipboards(self._message_texts[message_index])
             self._clear_selection()
+
+    def action_toggle_section(self, block_index: int, section_index: int) -> None:
+        """Expand/collapse an accordion section (thinking / tool result)."""
+        if 0 <= block_index < len(self._blocks):
+            block = self._blocks[block_index]
+            if 0 <= section_index < len(block.sections):
+                section = block.sections[section_index]
+                section.collapsed = not section.collapsed
+                if block_index == len(self._blocks) - 1:
+                    self._rewrite_tail(block_index)
+                else:
+                    self._rebuild()
+
+    def clear(self) -> 'MessagePane':
+        """Clear the log and any active selection."""
+        self._blocks.clear()
+        self._message_spans.clear()
+        self._message_texts.clear()
+        self._clear_selection()
+        return super().clear()
 
     # --- selection helpers --------------------------------------------------
 

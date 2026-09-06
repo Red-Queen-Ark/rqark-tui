@@ -79,7 +79,7 @@ async def _main() -> None:
     session = await app.session_mgr.get(session_id) if session_id is not None else None
     if session is not None:
         tui.set_session_title(session.title)
-        tui.restore_session(session.get_last_chunk())
+        tui.restore_session(session.get_last_chunk(), session.updated_at)
     await tui.run()
 
 
