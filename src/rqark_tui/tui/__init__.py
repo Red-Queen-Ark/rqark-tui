@@ -55,6 +55,7 @@ class AgentTUI(QuitHandler, App):
         header.agent_name = self._agent_name
         header.model_name = self._model_name
         header.session_title = self._session_title
+        self.query_one(ChatInput).focus()
 
     def set_agent_name(self, name: str) -> None:
         self._agent_name = name
