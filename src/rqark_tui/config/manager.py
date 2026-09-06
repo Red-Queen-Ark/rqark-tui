@@ -5,6 +5,7 @@ from rqark_app.types.agent import BaseAgent
 from rqark_core.types.provider import Provider
 
 from rqark_tui.config.default import AGENTS, PROVIDERS
+from rqark_tui.libs.dir_cache import DirCache
 from rqark_tui.utils.io import IoHelper
 
 
@@ -14,6 +15,8 @@ class ConfigManager:
         self.config_path = Path(config_path)
         self.agents: Sequence[BaseAgent] = AGENTS
         self.providers: list[Provider] = []
+        self.dir_cache = DirCache(self.config_path)
+        self.cwd_hash = self.dir_cache.compute_hash(Path.cwd())
 
     def load(self):
         self.config_path.mkdir(parents=True, exist_ok=True)
