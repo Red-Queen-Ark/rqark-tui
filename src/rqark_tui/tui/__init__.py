@@ -43,7 +43,6 @@ class AgentTUI(QuitHandler, App):
         self._session_title = ''
         self._plan_items: list[PlanItem] = []
         self._chat_handler: Callable[[str], Awaitable[None]] | None = None
-        self._command_handler: Callable[[str], Awaitable[str | None]] | None = None
         self._chat_worker: Worker | None = None
         self._chat_busy = False
 
@@ -85,9 +84,6 @@ class AgentTUI(QuitHandler, App):
     def set_chat_handler(self, handler: Callable[[str], Awaitable[None]]) -> None:
         self._chat_handler = handler
 
-    def set_command_handler(self, handler: Callable[[str], Awaitable[str | None]]) -> None:
-        self._command_handler = handler
-
     def append_agent_delta(self, text: str) -> None:
         self.query_one(MessagePane).append_agent_delta(self._agent_name, text)
 
@@ -120,11 +116,8 @@ class AgentTUI(QuitHandler, App):
 
     def on_chat_input_submitted(self, event: ChatInput.Submitted) -> None:
         text = event.text
-        if text.startswith('/'):
-            self.run_worker(self._run_command(text), name='command', group='agent', exit_on_error=False)
-            return
         if self._chat_busy:
-            self.notify('Still processing — type /stop to cancel', severity='warning', timeout=4)
+            self.notify('Still processing — please wait', severity='warning', timeout=4)
             return
         self.query_one(MessagePane).append_message(text)
         if self._chat_handler is None:
@@ -136,19 +129,6 @@ class AgentTUI(QuitHandler, App):
             group='agent',
             exit_on_error=False,
         )
-
-    async def _run_command(self, text: str) -> None:
-        handler = self._command_handler
-        if handler is None:
-            self.append_system('Command handler not available')
-            return
-        try:
-            result = await handler(text)
-        except Exception as error:
-            self.notify(str(error), severity='error', timeout=8)
-            return
-        if result:
-            self.append_system(result)
 
     async def _run_chat(self, text: str) -> None:
         handler = self._chat_handler
