@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 from rich.cells import cell_len
+from rich.markdown import Markdown
 from rich.segment import Segment
 from rich.style import Style
 from rich.text import Text
@@ -272,14 +273,47 @@ class MessagePane(RichLog):
     def _emit_block(self, idx: int) -> None:
         block = self._blocks[idx]
         start = len(self.lines)
-        rows = self._block_text(block, idx)
-        if rows:
-            self.write(rows, width=max(self.scrollable_content_region.width, 40))
+        width = max(self.scrollable_content_region.width, 40)
+        self.write(self._header_row(block, idx), width=width, scroll_end=False)
+        for si, section in enumerate(block.sections):
+            row: object | None = None
+            if section.mode == 'body':
+                if section.text and block.kind == 'agent':
+                    row = Markdown(section.text)
+                elif section.text:
+                    row = Text(section.text, style=Style(color='#ffffff'))
+            elif section.mode == 'think':
+                row = self._accordion_row(section, idx, si)
+                if not section.collapsed and section.text:
+                    self.write(Text(section.text, style=Style(dim=True, italic=True, color='#9a9a9a')), width=width, scroll_end=False)
+            elif section.mode == 'tool':
+                row = self._tool_row(section)
+            elif section.mode == 'result':
+                row = self._accordion_row(section, idx, si, prefix='tool result: ')
+                if not section.collapsed and section.text:
+                    self.write(Text(section.text, style=Style(dim=True, color='#9e9e9e')), width=width, scroll_end=False)
+            elif section.mode == 'error':
+                if section.text:
+                    row = Text(section.text, style=Style(color='#DC143C'))
+            elif section.text:
+                row = Text(section.text, style=Style(dim=True, color='#c0c0c0'))
+            if row is not None:
+                self.write(row, width=width, scroll_end=False)
         end = len(self.lines)
         if end > start:
             self._message_spans.append((start, end))
             self._message_texts.append(self._copy_text(block))
         self.scroll_end(animate=False)
+
+    def _header_row(self, block: _Block, idx: int) -> Text:
+        label = 'Agent' if block.kind in ('agent', 'tools') else block.kind.title()
+        head = Text()
+        head.append(f'{label} ', Style(bold=True, color=_LABEL_COLORS.get(block.kind, '#808080')))
+        dt = block.time
+        head.append(' ' * self._pad_to(cell_len(label) + 1 + cell_len(dt) + len(' [copy]')))
+        head.append(dt, Style(dim=True, color='#808080'))
+        head.append(' [copy]', Style(color=_ACCENT, meta={'@click': f'copy_message({idx})'}))
+        return head
 
     def _tool_display(self, section: _Section) -> str:
         key = self._tool_keys.get(section.name)
@@ -308,43 +342,6 @@ class MessagePane(RichLog):
         if content < 10:
             return max(width - 1, 0)
         return max(content - width, 0)
-
-    def _block_text(self, block: _Block, idx: int) -> Text:
-        parts: list[Text] = []
-        label = 'Agent' if block.kind in ('agent', 'tools') else block.kind.title()
-        head = Text()
-        head.append(f'{label} ', Style(bold=True, color=_LABEL_COLORS.get(block.kind, '#808080')))
-        dt = block.time
-        head.append(' ' * self._pad_to(cell_len(label) + 1 + cell_len(dt) + len(' [copy]')))
-        head.append(dt, Style(dim=True, color='#808080'))
-        head.append(' [copy]', Style(color=_ACCENT, meta={'@click': f'copy_message({idx})'}))
-        parts.append(head)
-        for si, section in enumerate(block.sections):
-            if section.mode == 'body':
-                if section.text:
-                    parts.append(Text(section.text, style=Style(color='#ffffff')))
-            elif section.mode == 'think':
-                parts.append(self._accordion_row(section, idx, si))
-                if not section.collapsed and section.text:
-                    parts.append(Text(section.text, style=Style(dim=True, italic=True, color='#9a9a9a')))
-            elif section.mode == 'tool':
-                parts.append(self._tool_row(section))
-            elif section.mode == 'result':
-                parts.append(self._accordion_row(section, idx, si, prefix='tool result: '))
-                if not section.collapsed and section.text:
-                    parts.append(Text(section.text, style=Style(dim=True, color='#9e9e9e')))
-            elif section.mode == 'error':
-                if section.text:
-                    parts.append(Text(section.text, style=Style(color='#DC143C')))
-            else:
-                if section.text:
-                    parts.append(Text(section.text, style=Style(dim=True, color='#c0c0c0')))
-        text = Text()
-        for index, part in enumerate(parts):
-            text.append_text(part)
-            if index < len(parts) - 1:
-                text.append('\n')
-        return text
 
     def _tool_row(self, section: _Section) -> Text:
         row = Text()
