@@ -46,7 +46,6 @@ class AgentTUI(QuitHandler, App):
         self._chat_worker: Worker | None = None
         self._chat_busy = False
         self._restore_messages: Sequence[Message | SummaryMessage] | None = None
-        self._restore_at: datetime | None = None
 
     def compose(self) -> ComposeResult:
         yield HeaderBar()
@@ -81,18 +80,17 @@ class AgentTUI(QuitHandler, App):
     def set_chat_handler(self, handler: Callable[[str], Awaitable[None]]) -> None:
         self._chat_handler = handler
 
-    def restore_session(self, messages: Sequence[Message | SummaryMessage], at: datetime | None = None) -> None:
+    def restore_session(self, messages: Sequence[Message | SummaryMessage]) -> None:
         self._restore_messages = messages
-        self._restore_at = at
         if self.is_running:
             self._replay_restored_messages()
 
     def _replay_restored_messages(self) -> None:
         messages, self._restore_messages = self._restore_messages, None
-        at, self._restore_at = self._restore_at, None
         if not messages:
             return
         for m in messages:
+            at = getattr(m, 'created_at', None)
             if isinstance(m, (SummaryMessage, SystemMessage)):
                 self.append_system(m.content, at)
             elif isinstance(m, UserMessage):
