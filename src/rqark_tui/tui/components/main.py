@@ -173,7 +173,7 @@ class MessagePane(RichLog):
         if block.sections and block.sections[0].mode == 'think':
             block.sections[0].text += text
         else:
-            block.sections.insert(0, _Section('think', 'thinking', text))
+            block.sections.insert(0, _Section('think', 'thinking', text, collapsed=True))
         self._rewrite_tail(idx)
 
     def close_agent_message(self) -> None:
@@ -200,7 +200,7 @@ class MessagePane(RichLog):
             self._new_block('tools', at, [])
             block = self._blocks[-1]
             idx = len(self._blocks) - 1
-        block.sections.append(_Section('result', name or 'tool', content.strip()))
+        block.sections.append(_Section('result', name or 'tool', content.strip(), collapsed=True))
         self._rewrite_tail(idx)
 
     def append_error(self, text: str, at: datetime | None = None) -> None:
