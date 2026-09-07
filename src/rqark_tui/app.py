@@ -29,7 +29,11 @@ async def connect_agent_event_to_tui(app: AgentApp, tui: AgentTUI):
 
     @app.on_tool_result()
     async def tool_result(ev: AgentPayload[ToolMessage]) -> None:
-        tui.append_tool_result(ev.payload.tool_name or '', ev.payload.content)
+        tm = ev.payload
+        if not isinstance(tm, ToolMessage):
+            tm = tm.content if isinstance(getattr(tm, 'content', None), ToolMessage) else None
+        if tm is not None:
+            tui.append_tool_result(tm.tool_name or '', tm.content)
 
     @app.on_error()
     async def error(ev: AgentPayload[Chunk]) -> None:
