@@ -4,6 +4,7 @@ from datetime import datetime
 
 from rqark_app.types.session import SummaryMessage
 from rqark_core.types.chat import AssistantMessage, Message, SystemMessage, ToolMessage, UserMessage
+from rqark_core.types.tool import BaseTool
 from textual.app import App, AutopilotCallbackType, ComposeResult
 from textual.worker import Worker
 
@@ -46,6 +47,10 @@ class AgentTUI(QuitHandler, App):
         self._chat_worker: Worker | None = None
         self._chat_busy = False
         self._restore_messages: Sequence[Message | SummaryMessage] | None = None
+        self._tool_keys: dict[str, str] = {}
+
+    def set_tools(self, tools: Sequence[BaseTool]) -> None:
+        self._tool_keys = {tool.name: tool.display_key for tool in tools}
 
     def compose(self) -> ComposeResult:
         yield HeaderBar()
@@ -59,6 +64,7 @@ class AgentTUI(QuitHandler, App):
         header.agent_name = self._agent_name
         header.model_name = self._model_name
         header.session_title = self._session_title
+        self.query_one(MessagePane).set_tool_keys(self._tool_keys)
         self.query_one(ChatInput).focus()
         self._replay_restored_messages()
 
@@ -120,7 +126,7 @@ class AgentTUI(QuitHandler, App):
     def close_agent_message(self) -> None:
         self.query_one(MessagePane).close_agent_message()
 
-    def append_tool_call(self, name: str, arguments: str, at: datetime | None = None) -> None:
+    def append_tool_call(self, name: str, arguments: str = '', at: datetime | None = None) -> None:
         self.query_one(MessagePane).append_tool_call(name, arguments, at)
 
     def append_tool_result(self, name: str, content: str, at: datetime | None = None) -> None:

@@ -1,3 +1,4 @@
+import json
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -133,6 +134,10 @@ class MessagePane(RichLog):
         self._selection_end: tuple[int, int] | None = None
         self._selection_anchor: tuple[int, int] | None = None
         self._needs_initial_rebuild = True
+        self._tool_keys: dict[str, str] = {}
+
+    def set_tool_keys(self, tool_keys: dict[str, str]) -> None:
+        self._tool_keys = tool_keys
 
     def on_resize(self, event) -> None:
         super().on_resize(event)
@@ -174,24 +179,26 @@ class MessagePane(RichLog):
     def close_agent_message(self) -> None:
         self._close_last()
 
-    def append_tool_call(self, name: str, arguments: str, at: datetime | None = None) -> None:
-        self._close_last()
+    def append_tool_call(self, name: str, arguments: str = '', at: datetime | None = None) -> None:
         if self._blocks and self._blocks[-1].kind == 'tools' and self._blocks[-1].open:
             block = self._blocks[-1]
             idx = len(self._blocks) - 1
         else:
-            block = self._new_block('tools', at, [])
+            self._close_last()
+            self._new_block('tools', at, [])
+            block = self._blocks[-1]
             idx = len(self._blocks) - 1
-        key = len([s for s in block.sections if s.mode == 'tool']) + 1
-        block.sections.append(_Section('tool', name, f'[{key}]'))
+        block.sections.append(_Section('tool', name, arguments))
         self._rewrite_tail(idx)
 
     def append_tool_result(self, name: str, content: str, at: datetime | None = None) -> None:
-        if self._blocks and self._blocks[-1].kind == 'tools' and self._blocks[-1].open:
+        if self._blocks and self._blocks[-1].kind == 'tools':
             block = self._blocks[-1]
+            block.open = True
             idx = len(self._blocks) - 1
         else:
-            block = self._new_block('tools', at, [])
+            self._new_block('tools', at, [])
+            block = self._blocks[-1]
             idx = len(self._blocks) - 1
         block.sections.append(_Section('result', name or 'tool', content.strip()))
         self._rewrite_tail(idx)
@@ -274,12 +281,24 @@ class MessagePane(RichLog):
             self._message_texts.append(self._copy_text(block))
         self.scroll_end(animate=False)
 
+    def _tool_display(self, section: _Section) -> str:
+        key = self._tool_keys.get(section.name)
+        if key:
+            try:
+                data = json.loads(section.text or '{}')
+            except ValueError:
+                data = {}
+            if isinstance(data, dict) and data.get(key) is not None:
+                return str(data[key])
+        return section.text[:40] if section.text else ''
+
     def _copy_text(self, block: _Block) -> str:
         label = 'Agent' if block.kind in ('agent', 'tools') else block.kind.title()
         parts = [label]
         for section in block.sections:
             if section.mode == 'tool':
-                parts.append(f'use tool {section.name} {section.text}')
+                display = self._tool_display(section)
+                parts.append(f'use tool {section.name}' + (f' {display}' if display else ''))
             elif section.text:
                 parts.append(section.text)
         return '\n'.join(parts)
@@ -331,7 +350,9 @@ class MessagePane(RichLog):
         row = Text()
         row.append('use tool ', Style(color='#c8a000'))
         row.append(section.name, Style(bold=True, color='#FFD700'))
-        row.append(f' {section.text}', Style(dim=True, color='#8a6d00'))
+        display = self._tool_display(section)
+        if display:
+            row.append(f' {display}', Style(dim=True, color='#8a6d00'))
         return row
 
     def _accordion_row(self, section: _Section, idx: int, si: int, prefix: str = '') -> Text:

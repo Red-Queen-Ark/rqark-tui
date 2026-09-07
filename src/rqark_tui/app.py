@@ -57,6 +57,7 @@ async def _main() -> None:
     await connect_agent_event_to_tui(app, tui)
     tui.set_agent_name(agent_mgr.agent.name)
     tui.set_model_name(app.provider_mgr.provider.name)
+    tui.set_tools(agent_mgr.agent.tools)
 
     title_tasks: set[asyncio.Task] = set()
 
