@@ -8,7 +8,7 @@ from rqark_core.types.tool import BaseTool
 from textual.app import App, AutopilotCallbackType, ComposeResult
 from textual.worker import Worker
 
-from rqark_tui.tui.components.completion import CompletionPopup, expand_file_refs
+from rqark_tui.tui.components.completion import CompletionPopup
 from rqark_tui.tui.components.footer import ChatInput
 from rqark_tui.tui.components.header import HeaderBar
 from rqark_tui.tui.components.main import MessagePane
@@ -156,7 +156,7 @@ class AgentTUI(QuitHandler, App):
             return
         self._chat_busy = True
         self._chat_worker = self.run_worker(
-            self._run_chat(expand_file_refs(text)),
+            self._run_chat(text),
             name='agent-chat',
             group='agent',
             exit_on_error=False,

@@ -1,6 +1,5 @@
 import fnmatch
 import os
-import re
 import time
 from pathlib import Path
 
@@ -13,9 +12,6 @@ MAX_DEPTH = 8
 MAX_VISIBLE = 6
 CACHE_TTL = 5.0
 GITIGNORE_MAX_DEPTH = 4
-MAX_FILE_LINES = 2000
-
-_AT_RE = re.compile(r'(?<!\S)@([^\s@]+)')
 
 
 class FileMatcher:
@@ -234,27 +230,3 @@ class CompletionPopup(Static):
             down_hint = ' ▼' if has_below and i == count - 1 else ''
             lines.append(f'{up_hint}{marker} {escape(display)}{down_hint}')
         return '\n'.join(lines)
-
-
-def expand_file_refs(text: str, root: Path | None = None) -> str:
-    """Expand `@path` references in a message to inline file content."""
-    base = (root or Path.cwd()).resolve()
-
-    def replace(match: re.Match[str]) -> str:
-        raw = match.group(1).rstrip('/')
-        if not raw:
-            return match.group(0)
-        target = (base / raw).resolve()
-        if not target.is_file() or not target.is_relative_to(base):
-            return match.group(0)
-        try:
-            content = target.read_text(encoding='utf-8')
-        except (OSError, UnicodeDecodeError):
-            return match.group(0)
-        lines = content.splitlines()
-        if len(lines) > MAX_FILE_LINES:
-            lines = lines[:MAX_FILE_LINES]
-            lines.append('… (truncated)')
-        return f'## @{raw}\n' + '\n'.join(lines)
-
-    return _AT_RE.sub(replace, text)
