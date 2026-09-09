@@ -22,9 +22,6 @@ jobs:
       run: uv python install 3.14
 
     - name: Build the package
-      env:
-        UV_INDEX_GITEA_USERNAME: ${{ secrets.REGISTRY_USERNAME }}
-        UV_INDEX_GITEA_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
       run: uv build
 
     - name: Publish to Gitea PyPI
