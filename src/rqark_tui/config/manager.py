@@ -6,7 +6,7 @@ from rqark_core.types.provider import Provider
 
 from rqark_tui.config.default import AGENTS, PROVIDERS
 from rqark_tui.libs.dir_cache import DirCache
-from rqark_tui.utils.io import IoHelper
+from rqark_tui.libs.io import IoHelper
 
 
 class ConfigManager:
