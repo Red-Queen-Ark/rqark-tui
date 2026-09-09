@@ -276,28 +276,28 @@ class MessagePane(RichLog):
         width = max(self.scrollable_content_region.width, 40)
         self.write(self._header_row(block, idx), width=width, scroll_end=False)
         for si, section in enumerate(block.sections):
-            row: object | None = None
+            rows: list[object] = []
             if section.mode == 'body':
                 if section.text and block.kind == 'agent':
-                    row = Markdown(section.text)
+                    rows.append(Markdown(section.text))
                 elif section.text:
-                    row = Text(section.text, style=Style(color='#ffffff'))
+                    rows.append(Text(section.text, style=Style(color='#ffffff')))
             elif section.mode == 'think':
-                row = self._accordion_row(section, idx, si)
+                rows.append(self._accordion_row(section, idx, si))
                 if not section.collapsed and section.text:
-                    self.write(Text(section.text, style=Style(dim=True, italic=True, color='#9a9a9a')), width=width, scroll_end=False)
+                    rows.append(Text(section.text, style=Style(dim=True, italic=True, color='#9a9a9a')))
             elif section.mode == 'tool':
-                row = self._tool_row(section)
+                rows.append(self._tool_row(section))
             elif section.mode == 'result':
-                row = self._accordion_row(section, idx, si, prefix='tool result: ')
+                rows.append(self._accordion_row(section, idx, si, prefix='tool result: '))
                 if not section.collapsed and section.text:
-                    self.write(Text(section.text, style=Style(dim=True, color='#9e9e9e')), width=width, scroll_end=False)
+                    rows.append(Text(section.text, style=Style(dim=True, color='#9e9e9e')))
             elif section.mode == 'error':
                 if section.text:
-                    row = Text(section.text, style=Style(color='#DC143C'))
+                    rows.append(Text(section.text, style=Style(color='#DC143C')))
             elif section.text:
-                row = Text(section.text, style=Style(dim=True, color='#c0c0c0'))
-            if row is not None:
+                rows.append(Text(section.text, style=Style(dim=True, color='#c0c0c0')))
+            for row in rows:
                 self.write(row, width=width, scroll_end=False)
         end = len(self.lines)
         if end > start:
@@ -355,7 +355,7 @@ class MessagePane(RichLog):
     def _accordion_row(self, section: _Section, idx: int, si: int, prefix: str = '') -> Text:
         marker = '▶' if section.collapsed else '▼'
         row = Text()
-        row.append(f'{marker} {prefix}{section.name}', Style(dim=True, color='#808080', meta={'@click': f'toggle_section({idx},{si})'}))
+        row.append(f'{marker} {prefix}{section.name}', Style(bold=True, color='#757575', meta={'@click': f'toggle_section({idx},{si})'}))
         return row
 
     def action_copy_message(self, message_index: int) -> None:
