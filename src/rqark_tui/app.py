@@ -6,6 +6,7 @@ from rqark_app.session.storage import JSONLStorage
 from rqark_app.types.event import ProviderSwitch
 from rqark_core.types.chat import Chunk, ToolMessage
 from rqark_core.types.event import AgentPayload
+from rqark_core.types.tool import PlanItem
 
 from rqark_tui.config.default import AGENTS
 from rqark_tui.config.manager import ConfigManager
@@ -43,6 +44,10 @@ async def connect_agent_event_to_tui(app: AgentApp, tui: AgentTUI):
     @app.on_message()
     async def message(ev: AgentPayload[Message]) -> None:
         tui.close_agent_message()
+
+    @app.on_plan()
+    async def plan(ev: AgentPayload[list[PlanItem]]) -> None:
+        tui.show_plan(ev.payload)
 
     @app.on_provider_switched()
     async def provider_switched(ev: AgentPayload[ProviderSwitch]) -> None:

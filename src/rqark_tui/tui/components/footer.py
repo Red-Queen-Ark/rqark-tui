@@ -120,6 +120,11 @@ class ChatInput(TextArea):
         lines = min(max(self.document.line_count, 1), self.MAX_LINES)
         self.styles.height = lines + 2
 
+    @property
+    def picking(self) -> bool:
+        """True while a picker popup is awaiting the user's choice."""
+        return self._pick_done is not None
+
     def _query_popup(self) -> PopupSelector | None:
         if self._popup is None:
             try:

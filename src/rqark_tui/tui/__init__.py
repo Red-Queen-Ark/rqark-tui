@@ -5,7 +5,7 @@ from datetime import datetime
 
 from rqark_app.types.session import SummaryMessage
 from rqark_core.types.chat import AssistantMessage, Message, SystemMessage, ToolMessage, UserMessage
-from rqark_core.types.tool import BaseTool
+from rqark_core.types.tool import BaseTool, PlanItem
 from textual.app import App, AutopilotCallbackType, ComposeResult
 from textual.worker import Worker
 
@@ -145,6 +145,17 @@ class AgentTUI(QuitHandler, App):
 
     def clear_messages(self) -> None:
         self.query_one(MessagePane).clear()
+
+    def show_plan(self, items: Sequence[PlanItem]) -> None:
+        """Show the agent plan in the popup (read-only); an empty plan hides it."""
+        chat = self.query_one(ChatInput)
+        if chat.picking:
+            return
+        popup = self.query_one(PopupSelector)
+        if not items:
+            popup.hide()
+            return
+        popup.show_text('\n'.join(f'[{item.icon}] {item.content}' for item in items), title='Plan')
 
     def cancel_chat(self) -> None:
         worker = self._chat_worker
