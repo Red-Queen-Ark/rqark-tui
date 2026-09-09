@@ -25,6 +25,7 @@ packages = ["src/rqark_tui"]
 name = "gitea"
 url = "https://gitea.carhyme.top/api/packages/RedQueenArk/pypi/simple"
 publish-url = "https://gitea.carhyme.top/api/packages/RedQueenArk/pypi"
+explicit = true
 
 [tool.uv.sources]
 rqark-core = { index = "gitea" }
