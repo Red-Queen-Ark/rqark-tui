@@ -7,8 +7,8 @@ from pathlib import Path
 class DirCache:
     """Maps working-directory hash → session_id so reopening a project resumes the session."""
 
-    def __init__(self, cache_path: Path | None = None) -> None:
-        self._path = cache_path or (Path.home() / '.rqark' / 'dir_cache.json')
+    def __init__(self, cache_path: Path) -> None:
+        self._path = cache_path / 'dir_cache.json'
         self._lock = threading.Lock()
 
     def _load(self) -> dict[str, str]:
