@@ -1,4 +1,5 @@
 import asyncio
+from pathlib import Path
 
 from rqark_app.agent.manager import AgentManager
 from rqark_app.app import AgentApp, Message
@@ -55,12 +56,12 @@ async def connect_agent_event_to_tui(app: AgentApp, tui: AgentTUI):
 
 
 async def _main() -> None:
-    config_mgr = ConfigManager('./.rqark')
+    config_mgr = ConfigManager(str(Path.home() / '.rqark'))
     config_mgr.load()
     session_id = config_mgr.dir_cache.get_session_id(config_mgr.cwd_hash)
     agent_mgr = AgentManager(AGENTS)
 
-    storage = JSONLStorage(config_mgr.config_path / 'sessions')
+    storage = JSONLStorage(config_mgr.config_path / 'sessions' / 'tui')
     app = AgentApp(config_mgr.providers, storage)
     await app.session_mgr.load()
 
