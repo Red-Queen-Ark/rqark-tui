@@ -121,9 +121,10 @@ class ChatInput(TextArea):
         self.styles.height = lines + 2
 
     @property
-    def picking(self) -> bool:
-        """True while a picker popup is awaiting the user's choice."""
-        return self._pick_done is not None
+    def popup_active(self) -> bool:
+        """True while the popup demands keys (picker or completion), not a passive plan view."""
+        popup = self._query_popup()
+        return popup is not None and popup.display and popup.selectable
 
     def _query_popup(self) -> PopupSelector | None:
         if self._popup is None:
@@ -177,7 +178,8 @@ class ChatInput(TextArea):
         if at_index is not None:
             popup.show([(escape(display), value) for display, value, _ in self._matcher.matches(prefix)])
             return
-        popup.hide()
+        if popup.display and popup.selectable:
+            popup.hide()
 
     def _select_completion(self) -> None:
         popup = self._query_popup()
@@ -241,20 +243,26 @@ class ChatInput(TextArea):
                     event.prevent_default()
                     self._finish_pick(popup.selected_entry if event.key == 'enter' else None)
                     return
-            if event.key in ('up', 'down', 'tab'):
-                event.stop()
-                event.prevent_default()
-                popup.move(1 if event.key != 'up' else -1)
-                return
-            if event.key == 'escape':
+            elif popup.selectable:
+                if event.key in ('up', 'down', 'tab'):
+                    event.stop()
+                    event.prevent_default()
+                    popup.move(1 if event.key != 'up' else -1)
+                    return
+                if event.key == 'escape':
+                    event.stop()
+                    event.prevent_default()
+                    popup.hide()
+                    return
+                if event.key == 'enter':
+                    event.stop()
+                    event.prevent_default()
+                    self._select_completion()
+                    return
+            elif event.key == 'escape':
                 event.stop()
                 event.prevent_default()
                 popup.hide()
-                return
-            if event.key == 'enter':
-                event.stop()
-                event.prevent_default()
-                self._select_completion()
                 return
         if event.key == 'enter':
             event.stop()

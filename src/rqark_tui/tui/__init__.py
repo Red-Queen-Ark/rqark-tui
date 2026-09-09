@@ -149,7 +149,7 @@ class AgentTUI(QuitHandler, App):
     def show_plan(self, items: Sequence[PlanItem]) -> None:
         """Show the agent plan in the popup (read-only); an empty plan hides it."""
         chat = self.query_one(ChatInput)
-        if chat.picking:
+        if chat.popup_active:
             return
         popup = self.query_one(PopupSelector)
         if not items:
