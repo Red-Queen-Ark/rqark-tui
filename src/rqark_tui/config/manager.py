@@ -23,7 +23,7 @@ class ConfigManager:
         self._local_provider()
 
     def _local_provider(self):
-        path = self.config_path / 'provider.yml'
+        path = self.config_path / 'providers.yml'
         providers = self.io_helper.read(path)
         if providers is None:
             self.io_helper.save(path, PROVIDERS)
