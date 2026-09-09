@@ -469,11 +469,20 @@ class MessagePane(RichLog):
         write_system_clipboard(text)
         self.notify('Copied')
 
+    def copy_selection(self) -> bool:
+        """Copy the current mouse selection to the clipboards; False when there is none."""
+        if not self._has_selection:
+            return False
+        text = self._selection_text()
+        if not text:
+            return False
+        self._copy_to_clipboards(text)
+        return True
+
     # --- mouse selection -----------------------------------------------------
 
     async def _on_mouse_down(self, event: events.MouseDown) -> None:
         if event.button == 1:  # left button
-            self.focus()
             self.capture_mouse()
             offset = event.get_content_offset(self)
             if offset is not None:

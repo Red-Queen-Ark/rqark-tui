@@ -9,6 +9,7 @@ from textual.widgets import TextArea
 
 from rqark_tui.tui.commands import slash_entries
 from rqark_tui.tui.components.file_match import FileMatcher
+from rqark_tui.tui.components.main import MessagePane
 from rqark_tui.tui.components.popup import Entry, PopupSelector
 
 # --- macOS physical modifier-state detection ---------------------------------
@@ -102,6 +103,7 @@ class ChatInput(TextArea):
         self.placeholder = placeholder
         self._matcher = FileMatcher()
         self._popup: PopupSelector | None = None
+        self._message_pane: MessagePane | None = None
         self._pick_done: Callable[[Entry | None], None] | None = None
         self._update_height()
 
@@ -133,6 +135,14 @@ class ChatInput(TextArea):
             except Exception:
                 return None
         return self._popup
+
+    def _query_message_pane(self) -> MessagePane | None:
+        if self._message_pane is None:
+            try:
+                self._message_pane = self.app.query_one(MessagePane)
+            except Exception:
+                return None
+        return self._message_pane
 
     def begin_pick(self, entries: list[Entry], *, title: str = '', index: int = 0, on_done: Callable[[Entry | None], None]) -> None:
         """Open the popup in picker mode; keys resolve ``on_done`` with the chosen entry or None."""
@@ -219,6 +229,12 @@ class ChatInput(TextArea):
         3. ``Ctrl+J`` sends a line feed byte (0x0A), which every terminal
            reports distinctly from Enter (0x0D).
         """
+        if event.key == 'ctrl+c' and self.selection.is_empty:
+            pane = self._query_message_pane()
+            if pane is not None and pane.copy_selection():
+                event.stop()
+                event.prevent_default()
+                return
         if event.key == 'circumflex_accent' and _is_return_pressed():
             # Terminals that send ESC+CR / ESC+LF for a *modified* Enter (e.g.
             # "Use Option as Meta", or a custom Shift+Enter binding) make Textual

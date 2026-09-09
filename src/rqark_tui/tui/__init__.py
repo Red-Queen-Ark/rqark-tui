@@ -19,6 +19,8 @@ from rqark_tui.tui.components.quit_handler import QuitHandler
 class AgentTUI(QuitHandler, App):
     """The rqark TUI: header bar, message pane, popup selector and chat input."""
 
+    AUTO_FOCUS = 'ChatInput'
+
     async def run(
         self,
         *,
