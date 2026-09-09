@@ -6,7 +6,8 @@ from textual import events
 from textual.message import Message
 from textual.widgets import TextArea
 
-from rqark_tui.tui.components.completion import CompletionPopup, FileMatcher
+from rqark_tui.tui.components.file_match import FileMatcher
+from rqark_tui.tui.components.popup import PopupSelector
 
 # --- macOS physical modifier-state detection ---------------------------------
 # Same trick as `libs/tui/input.py` on Windows (GetAsyncKeyState), but for macOS:
@@ -98,7 +99,7 @@ class ChatInput(TextArea):
         super().__init__(soft_wrap=True, show_line_numbers=False, tab_behavior='indent')
         self.placeholder = placeholder
         self._matcher = FileMatcher()
-        self._popup: CompletionPopup | None = None
+        self._popup: PopupSelector | None = None
         self._update_height()
 
     def on_text_area_changed(self, event: TextArea.Changed) -> None:
@@ -116,10 +117,10 @@ class ChatInput(TextArea):
         lines = min(max(self.document.line_count, 1), self.MAX_LINES)
         self.styles.height = lines + 2
 
-    def _query_popup(self) -> CompletionPopup | None:
+    def _query_popup(self) -> PopupSelector | None:
         if self._popup is None:
             try:
-                self._popup = self.app.query_one(CompletionPopup)
+                self._popup = self.app.query_one(PopupSelector)
             except Exception:
                 return None
         return self._popup

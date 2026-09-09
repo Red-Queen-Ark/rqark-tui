@@ -8,15 +8,15 @@ from rqark_core.types.tool import BaseTool
 from textual.app import App, AutopilotCallbackType, ComposeResult
 from textual.worker import Worker
 
-from rqark_tui.tui.components.completion import CompletionPopup
 from rqark_tui.tui.components.footer import ChatInput
 from rqark_tui.tui.components.header import HeaderBar
 from rqark_tui.tui.components.main import MessagePane
+from rqark_tui.tui.components.popup import PopupSelector
 from rqark_tui.tui.components.quit_handler import QuitHandler
 
 
 class AgentTUI(QuitHandler, App):
-    """The rqark TUI: header bar, message pane, completion popup and chat input."""
+    """The rqark TUI: header bar, message pane, popup selector and chat input."""
 
     async def run(
         self,
@@ -55,7 +55,7 @@ class AgentTUI(QuitHandler, App):
     def compose(self) -> ComposeResult:
         yield HeaderBar()
         yield MessagePane()
-        yield CompletionPopup()
+        yield PopupSelector()
         yield ChatInput()
 
     def on_mount(self) -> None:

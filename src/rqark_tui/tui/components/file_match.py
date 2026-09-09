@@ -3,13 +3,9 @@ import os
 import time
 from pathlib import Path
 
-from rich.markup import escape
-from textual.widgets import Static
-
 IGNORE_NAMES = {'.git', '.hg', '.svn', '.venv', 'venv', '__pycache__', 'node_modules', 'dist', 'build', '.tox'}
 IGNORE_SUFFIXES = {'.pyc', '.pyo', '.egg-info'}
 MAX_DEPTH = 8
-MAX_VISIBLE = 6
 CACHE_TTL = 5.0
 GITIGNORE_MAX_DEPTH = 4
 
@@ -152,81 +148,3 @@ class FileMatcher:
             needle = name_filter.lower()
             matches_list = [m for m in matches_list if os.path.basename(m[0].rstrip('/')).lower().startswith(needle)]
         return matches_list
-
-
-class CompletionPopup(Static):
-    """Transient autocomplete popup shown above the chat input."""
-
-    DEFAULT_CSS = """
-    CompletionPopup {
-        display: none;
-        border: round #303030;
-        background: #1a1a1a;
-        padding: 0 2;
-        height: auto;
-        max-height: 10;
-        color: #e0e0e0;
-    }
-    """
-
-    def __init__(self) -> None:
-        super().__init__('')
-        self._entries: list[tuple[str, str]] = []
-        self._selected = 0
-        self._scroll = 0
-
-    @property
-    def selected_entry(self) -> tuple[str, str] | None:
-        if not self._entries:
-            return None
-        return self._entries[self._selected]
-
-    @property
-    def _visible_count(self) -> int:
-        return min(len(self._entries), MAX_VISIBLE)
-
-    def show(self, entries: list[tuple[str, str]]) -> None:
-        self._entries = list(entries)
-        self._selected = 0
-        self._scroll = 0
-        self.display = bool(self._entries)
-        self.refresh()
-
-    def hide(self) -> None:
-        self._entries = []
-        self._selected = 0
-        self._scroll = 0
-        self.display = False
-
-    def move(self, delta: int) -> None:
-        if not self._entries:
-            return
-        self._selected = max(0, min(len(self._entries) - 1, self._selected + delta))
-        self._adjust_scroll()
-        self.refresh()
-
-    def _adjust_scroll(self) -> None:
-        count = self._visible_count
-        if self._selected < self._scroll:
-            self._scroll = self._selected
-        elif self._selected >= self._scroll + count:
-            self._scroll = self._selected - count + 1
-        self._scroll = max(0, min(self._scroll, max(0, len(self._entries) - count)))
-
-    def render(self) -> str:
-        if not self._entries:
-            return ''
-        count = self._visible_count
-        has_above = self._scroll > 0
-        has_below = self._scroll + count < len(self._entries)
-        lines = []
-        for i in range(count):
-            index = self._scroll + i
-            if index >= len(self._entries):
-                break
-            display, _value = self._entries[index]
-            marker = '❯' if index == self._selected else ' '
-            up_hint = '▲ ' if has_above and i == 0 else ''
-            down_hint = ' ▼' if has_below and i == count - 1 else ''
-            lines.append(f'{up_hint}{marker} {escape(display)}{down_hint}')
-        return '\n'.join(lines)
