@@ -10,6 +10,7 @@ from rqark_core.types.event import AgentPayload
 from rqark_tui.config.default import AGENTS
 from rqark_tui.config.manager import ConfigManager
 from rqark_tui.tui import AgentTUI
+from rqark_tui.tui.event_handler import EventHandler
 
 
 async def connect_agent_event_to_tui(app: AgentApp, tui: AgentTUI):
@@ -47,6 +48,7 @@ async def connect_agent_event_to_tui(app: AgentApp, tui: AgentTUI):
     async def provider_switched(ev: AgentPayload[ProviderSwitch]) -> None:
         tui.set_model_name(ev.payload.new.model_name)
 
+
 async def _main() -> None:
     config_mgr = ConfigManager('./.rqark')
     config_mgr.load()
@@ -63,25 +65,11 @@ async def _main() -> None:
     tui.set_model_name(app.provider_mgr.provider.name)
     tui.set_tools(agent_mgr.agent.tools)
 
-    title_tasks: set[asyncio.Task] = set()
+    handlers = EventHandler(app, tui, agent_mgr, config_mgr, session_id)
+    tui.set_chat_handler(handlers.chat)
+    tui.set_command_handler(handlers.command)
 
-    async def gen_title(session_uuid: str, first_message: str) -> None:
-        titled = await app.chat_helper.gen_title(session_uuid, first_message)
-        if titled is not None and titled.title:
-            tui.set_session_title(titled.title)
-
-    async def chat_handler(text: str) -> None:
-        nonlocal session_id
-        session = await app.chat(text, agent_mgr.agent, session_id=session_id)
-        session_id = session.uuid
-        config_mgr.dir_cache.set_session_id(config_mgr.cwd_hash, session_id)
-        if not session.title:
-            task = asyncio.create_task(gen_title(session.uuid, text))
-            title_tasks.add(task)
-            task.add_done_callback(title_tasks.discard)
-
-    tui.set_chat_handler(chat_handler)
-    session = await app.session_mgr.get(session_id) if session_id is not None else None
+    session = await app.session_mgr.get(handlers.session_id) if handlers.session_id is not None else None
     if session is not None:
         tui.set_session_title(session.title)
         tui.restore_session(session.get_last_chunk())

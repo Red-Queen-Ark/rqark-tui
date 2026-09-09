@@ -2,12 +2,14 @@ import ctypes
 import sys
 from typing import Callable
 
+from rich.markup import escape
 from textual import events
 from textual.message import Message
 from textual.widgets import TextArea
 
+from rqark_tui.tui.commands import slash_entries
 from rqark_tui.tui.components.file_match import FileMatcher
-from rqark_tui.tui.components.popup import PopupSelector
+from rqark_tui.tui.components.popup import Entry, PopupSelector
 
 # --- macOS physical modifier-state detection ---------------------------------
 # Same trick as `libs/tui/input.py` on Windows (GetAsyncKeyState), but for macOS:
@@ -100,6 +102,7 @@ class ChatInput(TextArea):
         self.placeholder = placeholder
         self._matcher = FileMatcher()
         self._popup: PopupSelector | None = None
+        self._pick_done: Callable[[Entry | None], None] | None = None
         self._update_height()
 
     def on_text_area_changed(self, event: TextArea.Changed) -> None:
@@ -125,6 +128,25 @@ class ChatInput(TextArea):
                 return None
         return self._popup
 
+    def begin_pick(self, entries: list[Entry], *, title: str = '', index: int = 0, on_done: Callable[[Entry | None], None]) -> None:
+        """Open the popup in picker mode; keys resolve ``on_done`` with the chosen entry or None."""
+        popup = self._query_popup()
+        if popup is None or not entries:
+            on_done(None)
+            return
+        self._pick_done = on_done
+        popup.show(entries, title=title, index=index)
+        self.focus()
+
+    def _finish_pick(self, entry: Entry | None) -> None:
+        popup = self._query_popup()
+        if popup is not None:
+            popup.hide()
+        on_done, self._pick_done = self._pick_done, None
+        self.clear()
+        if on_done is not None:
+            on_done(entry)
+
     def _file_prefix(self) -> tuple[str, int | None]:
         before = self.document.get_text_range((0, 0), self.cursor_location)
         at_index = before.rfind('@')
@@ -141,9 +163,14 @@ class ChatInput(TextArea):
         popup = self._query_popup()
         if popup is None:
             return
+        if self._pick_done is not None:
+            return
+        if self.document.line_count == 1 and self.text.startswith('/'):
+            popup.show(slash_entries(self.text))
+            return
         prefix, at_index = self._file_prefix()
         if at_index is not None:
-            popup.show([(display, value) for display, value, _ in self._matcher.matches(prefix)])
+            popup.show([(escape(display), value) for display, value, _ in self._matcher.matches(prefix)])
             return
         popup.hide()
 
@@ -156,6 +183,11 @@ class ChatInput(TextArea):
             popup.hide()
             return
         _display, value = entry
+        if self.document.line_count == 1 and self.text.startswith('/'):
+            popup.hide()
+            self.text = value
+            self.submit()
+            return
         prefix, at_index = self._file_prefix()
         if at_index is None:
             popup.hide()
@@ -193,6 +225,17 @@ class ChatInput(TextArea):
             return
         popup = self._query_popup()
         if popup is not None and popup.display:
+            if self._pick_done is not None:
+                if event.key in ('up', 'down', 'tab'):
+                    event.stop()
+                    event.prevent_default()
+                    popup.move(1 if event.key != 'up' else -1)
+                    return
+                if event.key in ('enter', 'escape'):
+                    event.stop()
+                    event.prevent_default()
+                    self._finish_pick(popup.selected_entry if event.key == 'enter' else None)
+                    return
             if event.key in ('up', 'down', 'tab'):
                 event.stop()
                 event.prevent_default()

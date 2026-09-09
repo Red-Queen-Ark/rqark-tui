@@ -1,3 +1,4 @@
+import asyncio
 from asyncio import AbstractEventLoop
 from collections.abc import Awaitable, Callable, Sequence
 from datetime import datetime
@@ -11,7 +12,7 @@ from textual.worker import Worker
 from rqark_tui.tui.components.footer import ChatInput
 from rqark_tui.tui.components.header import HeaderBar
 from rqark_tui.tui.components.main import MessagePane
-from rqark_tui.tui.components.popup import PopupSelector
+from rqark_tui.tui.components.popup import Entry, PopupSelector
 from rqark_tui.tui.components.quit_handler import QuitHandler
 
 
@@ -44,6 +45,7 @@ class AgentTUI(QuitHandler, App):
         self._model_name = ''
         self._session_title = ''
         self._chat_handler: Callable[[str], Awaitable[None]] | None = None
+        self._command_handler: Callable[[str], Awaitable[str | None]] | None = None
         self._chat_worker: Worker | None = None
         self._chat_busy = False
         self._restore_messages: Sequence[Message | SummaryMessage] | None = None
@@ -85,6 +87,9 @@ class AgentTUI(QuitHandler, App):
 
     def set_chat_handler(self, handler: Callable[[str], Awaitable[None]]) -> None:
         self._chat_handler = handler
+
+    def set_command_handler(self, handler: Callable[[str], Awaitable[str | None]]) -> None:
+        self._command_handler = handler
 
     def restore_session(self, messages: Sequence[Message | SummaryMessage]) -> None:
         self._restore_messages = messages
@@ -146,8 +151,25 @@ class AgentTUI(QuitHandler, App):
         if worker is not None and worker.is_running:
             worker.cancel()
 
+    async def pick(self, entries: Sequence[Entry], *, title: str = '', index: int = 0) -> Entry | None:
+        """Show entries in the popup selector and resolve with the chosen entry (None when dismissed)."""
+        if not entries:
+            return None
+        loop = asyncio.get_running_loop()
+        future: asyncio.Future[Entry | None] = loop.create_future()
+
+        def done(entry: Entry | None) -> None:
+            if not future.done():
+                future.set_result(entry)
+
+        self.query_one(ChatInput).begin_pick(list(entries), title=title, index=index, on_done=done)
+        return await future
+
     def on_chat_input_submitted(self, event: ChatInput.Submitted) -> None:
         text = event.text
+        if text.startswith('/') and self._command_handler is not None:
+            self.run_worker(self._run_command(text), name='command', group='agent', exit_on_error=False)
+            return
         if self._chat_busy:
             self.notify('Still processing — please wait', severity='warning', timeout=4)
             return
@@ -172,3 +194,15 @@ class AgentTUI(QuitHandler, App):
             self.notify(str(error), severity='error', timeout=8)
         finally:
             self._chat_busy = False
+
+    async def _run_command(self, command: str) -> None:
+        handler = self._command_handler
+        if handler is None:
+            return
+        try:
+            reply = await handler(command)
+        except Exception as error:
+            self.notify(str(error), severity='error', timeout=8)
+            return
+        if reply:
+            self.append_system(reply)

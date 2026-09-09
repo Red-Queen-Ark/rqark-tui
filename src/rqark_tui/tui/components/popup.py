@@ -64,7 +64,7 @@ class PopupSelector(Static):
         if not lines:
             self.hide()
             return
-        self._entries = [(line, '') for line in lines]
+        self._entries = [(escape(line), '') for line in lines]
         self._selectable = False
         self._selected = 0
         self._scroll = 0
@@ -129,5 +129,5 @@ class PopupSelector(Static):
                 break
             display, _value = self._entries[index]
             marker = '❯' if self._selectable and index == self._selected else ' '
-            lines.append(f'{marker} {escape(display)}')
+            lines.append(f'{marker} {display}')
         return '\n'.join(lines)
