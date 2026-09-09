@@ -3,6 +3,8 @@ import asyncio
 from rich.markup import escape
 from rqark_app.agent.manager import AgentManager
 from rqark_app.app import AgentApp
+from rqark_core.types.chat import AssistantMessage, Chunk, UserMessage
+from rqark_core.types.event import AgentPayload
 
 from rqark_tui.config.manager import ConfigManager
 from rqark_tui.tui import AgentTUI
@@ -25,6 +27,23 @@ class EventHandler:
         self.config_mgr = config_mgr
         self.session_id = session_id
         self._title_tasks: set[asyncio.Task] = set()
+        self._stream_active = False
+        self._stop_requested = False
+        self._last_chat_text = ''
+        self._stream_content = ''
+        self._stream_reasoning = ''
+        self._register_stream_tracking()
+
+    def _register_stream_tracking(self) -> None:
+        @self.app.on_think()
+        async def track_think(ev: AgentPayload[Chunk]) -> None:
+            if self._stream_active:
+                self._stream_reasoning += str(ev.payload.content)
+
+        @self.app.on_content()
+        async def track_content(ev: AgentPayload[Chunk]) -> None:
+            if self._stream_active:
+                self._stream_content += str(ev.payload.content)
 
     async def gen_title(self, session_uuid: str, first_message: str) -> None:
         titled = await self.app.chat_helper.gen_title(session_uuid, first_message)
@@ -32,13 +51,45 @@ class EventHandler:
             self.tui.set_session_title(titled.title)
 
     async def chat(self, text: str) -> None:
-        session = await self.app.chat(text, self.agent_mgr.agent, session_id=self.session_id)
-        self.session_id = session.uuid
+        self._last_chat_text = text
+        self._stream_content = ''
+        self._stream_reasoning = ''
+        self._stream_active = True
+        self._stop_requested = False
+        try:
+            if self.session_id is None:
+                session = await self.app.session_mgr.create()
+                self.session_id = session.uuid
+            session = await self.app.chat(text, self.agent_mgr.agent, session_id=self.session_id)
+            self.session_id = session.uuid
+            self.config_mgr.dir_cache.set_session_id(self.config_mgr.cwd_hash, self.session_id)
+            if not session.title:
+                task = asyncio.create_task(self.gen_title(session.uuid, text))
+                self._title_tasks.add(task)
+                task.add_done_callback(self._title_tasks.discard)
+        except asyncio.CancelledError:
+            if self._stop_requested:
+                await self._save_partial()
+                return
+            raise
+        finally:
+            self._stream_active = False
+
+    async def _save_partial(self) -> None:
+        content = self._stream_content
+        reasoning = self._stream_reasoning
+        if not content and not reasoning:
+            return
+        if self.session_id is None:
+            return
+        session = await self.app.session_mgr.get(self.session_id)
+        if session is None:
+            return
+        partial = AssistantMessage(content=content, reasoning_content=reasoning or None)
+        messages = [*session.get_last_chunk_for_chat(), UserMessage(self._last_chat_text), partial]
+        session.update_history_to_last_chunk(messages)
+        await self.app.session_mgr.save(session.uuid)
         self.config_mgr.dir_cache.set_session_id(self.config_mgr.cwd_hash, self.session_id)
-        if not session.title:
-            task = asyncio.create_task(self.gen_title(session.uuid, text))
-            self._title_tasks.add(task)
-            task.add_done_callback(self._title_tasks.discard)
 
     async def command(self, command: str) -> str | None:
         name, _, arg = command.partition(' ')
@@ -53,6 +104,7 @@ class EventHandler:
                 self.tui.set_session_title('')
                 return 'Conversation cleared'
             case '/stop':
+                self._stop_requested = True
                 self.tui.cancel_chat()
                 return 'Stopped'
             case '/models':

@@ -60,12 +60,12 @@ async def _main() -> None:
     await app.session_mgr.load()
 
     tui = AgentTUI()
-    await connect_agent_event_to_tui(app, tui)
     tui.set_agent_name(agent_mgr.agent.name)
     tui.set_model_name(app.provider_mgr.provider.name)
     tui.set_tools(agent_mgr.agent.tools)
 
     handlers = EventHandler(app, tui, agent_mgr, config_mgr, session_id)
+    await connect_agent_event_to_tui(app, tui)
     tui.set_chat_handler(handlers.chat)
     tui.set_command_handler(handlers.command)
 
