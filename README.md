@@ -42,14 +42,14 @@ pip install rqark-tui --extra-index-url https://gitea.carhyme.top/api/packages/R
 
 ```text
 ~/.rqark/
-├── provider.yml      # provider 清單（不存在時自動建立空白範本）
+├── providers.yml      # provider 清單（不存在時自動建立空白範本）
 ├── dir_cache.json    # 專案目錄（cwd hash）→ session 對應
 └── sessions/tui/     # 每 session 一個 .jsonl
 ```
 
 `dir_cache.json` 以啟動時的所在目錄（cwd hash）為 key，故每個專案各自保留 session。
 
-`provider.yml` 範例：
+`providers.yml` 範例：
 
 ```yaml
 - name: inhouse
