@@ -8,9 +8,9 @@ from rqark_app.types.event import ProviderSwitch
 from rqark_core.types.chat import Chunk, ToolMessage
 from rqark_core.types.event import AgentPayload
 from rqark_core.types.tool import PlanItem
+from rqark_app.config.default import AGENTS
+from rqark_app.config.manager import ConfigManager
 
-from rqark_tui.config.default import AGENTS
-from rqark_tui.config.manager import ConfigManager
 from rqark_tui.tui import AgentTUI
 from rqark_tui.tui.event_handler import EventHandler
 
