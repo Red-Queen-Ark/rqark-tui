@@ -8,7 +8,7 @@ class DirCache:
     """Maps working-directory hash → session_id so reopening a project resumes the session."""
 
     def __init__(self, cache_path: Path) -> None:
-        self._path = cache_path / 'dir_cache.json'
+        self._path = cache_path / 'dir_cache_tui.json'
         self._lock = threading.Lock()
 
     def _load(self) -> dict[str, str]:
