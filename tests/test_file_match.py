@@ -96,6 +96,36 @@ def test_directory_pattern_also_matches_nested_parts(tmp_path):
     assert displays(matcher) == ['src/', '.gitignore']
 
 
+def test_trailing_slash_pattern_containing_a_slash_is_a_literal_prefix(tmp_path):
+    build_tree(tmp_path, {'.gitignore': 'a*/b/\n', 'ab/b/x.py': 'x', 'keep.py': 'y'})
+    matcher = FileMatcher(tmp_path)
+    assert displays(matcher) == ['ab/', 'ab/b/', 'ab/b/x.py', '.gitignore', 'keep.py']
+
+
+def test_nested_gitignore_path_pattern_applies_only_when_listing_inside_it(tmp_path):
+    build_tree(tmp_path, {'pkg/.gitignore': 'sub/*.txt\n', 'pkg/sub/a.txt': 'x', 'pkg/sub/b.py': 'y', 'sub/c.txt': 'z'})
+    matcher = FileMatcher(tmp_path)
+    assert displays(matcher) == ['pkg/', 'pkg/sub/', 'pkg/sub/a.txt', 'pkg/sub/b.py', 'pkg/.gitignore', 'sub/', 'sub/c.txt']
+    assert displays(matcher, 'pkg/') == ['sub/', 'sub/b.py', '.gitignore']
+    assert displays(matcher, 'pkg/sub/') == ['b.py']
+
+
+def test_trailing_slash_pattern_from_a_nested_gitignore_is_anchored(tmp_path):
+    build_tree(tmp_path, {'pkg/.gitignore': 'a/b/\n', 'pkg/a/b/x.py': 'x', 'pkg/a/keep.py': 'y'})
+    matcher = FileMatcher(tmp_path)
+    assert displays(matcher, 'pkg/') == ['a/', 'a/keep.py', '.gitignore']
+    assert displays(matcher, 'pkg/a/') == ['keep.py']
+    assert displays(matcher, 'pkg/a/b/') == []
+
+
+def test_listing_inside_a_pruned_directory_returns_nothing(tmp_path):
+    build_tree(tmp_path, {'dist/app.js': 'x', 'build/out.txt': 'y', 'keep.py': 'z'})
+    matcher = FileMatcher(tmp_path)
+    assert displays(matcher) == ['keep.py']
+    assert displays(matcher, 'dist/') == []
+    assert displays(matcher, 'build/') == []
+
+
 def test_matches_filters_on_the_name_prefix(tmp_path):
     build_tree(tmp_path, {'main.py': 'x', 'models.py': 'y', 'other.txt': 'z'})
     matcher = FileMatcher(tmp_path)

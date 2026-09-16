@@ -28,6 +28,7 @@ class PopupSelector(Static):
         self._default_title = title
         self._entries: list[Entry] = []
         self._selectable = True
+        self._escape_labels = False
         self._selected = 0
         self._scroll = 0
 
@@ -47,10 +48,15 @@ class PopupSelector(Static):
     def _visible_count(self) -> int:
         return min(len(self._entries), MAX_VISIBLE)
 
-    def show(self, entries: Sequence[Entry], *, title: str | None = None, index: int = 0) -> None:
-        """Open as a selector over ``entries``, highlighting ``index``."""
+    def show(self, entries: Sequence[Entry], *, title: str | None = None, index: int = 0, escape_labels: bool = False) -> None:
+        """Open as a selector over ``entries``, highlighting ``index``.
+
+        Labels are rendered as markup unless ``escape_labels`` is set, in which
+        case only the visible rows are escaped — cheaper for huge candidate lists.
+        """
         self._entries = list(entries)
         self._selectable = True
+        self._escape_labels = escape_labels
         self._selected = max(0, min(index, len(self._entries) - 1))
         self._scroll = 0
         self._adjust_scroll()
@@ -67,6 +73,7 @@ class PopupSelector(Static):
             return
         self._entries = [(escape(line), '') for line in lines]
         self._selectable = False
+        self._escape_labels = False
         self._selected = 0
         self._scroll = 0
         self._apply_title(title)
@@ -77,6 +84,7 @@ class PopupSelector(Static):
     def hide(self) -> None:
         self._entries = []
         self._selectable = True
+        self._escape_labels = False
         self._selected = 0
         self._scroll = 0
         self.display = False
@@ -123,12 +131,15 @@ class PopupSelector(Static):
         if not self._entries:
             return ''
         count = self._visible_count
+        escape_labels = self._escape_labels
         lines: list[str] = []
         for i in range(count):
             index = self._scroll + i
             if index >= len(self._entries):
                 break
             display, _value = self._entries[index]
+            if escape_labels:
+                display = escape(display)
             marker = '❯' if self._selectable and index == self._selected else ' '
             lines.append(f'{marker} {display}')
         return '\n'.join(lines)

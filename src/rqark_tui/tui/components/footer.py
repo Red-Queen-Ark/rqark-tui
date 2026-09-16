@@ -2,7 +2,6 @@ import ctypes
 import sys
 from typing import Callable
 
-from rich.markup import escape
 from textual import events
 from textual.message import Message
 from textual.widgets import TextArea
@@ -186,7 +185,7 @@ class ChatInput(TextArea):
             return
         prefix, at_index = self._file_prefix()
         if at_index is not None:
-            popup.show([(escape(display), value) for display, value, _ in self._matcher.matches(prefix)])
+            popup.show([(display, value) for display, value, _ in self._matcher.matches(prefix)], escape_labels=True)
             return
         if popup.display and popup.selectable:
             popup.hide()
