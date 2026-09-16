@@ -215,6 +215,19 @@ class ChatInput(TextArea):
         self.replace(f'@{value} ', (row, col), self.cursor_location)
         popup.hide()
 
+    def _note_escape(self) -> None:
+        """Keep Esc meaningful in the input: it must not be swallowed by TextArea.
+
+        ``TextArea`` moves focus to the next widget on Esc when ``tab_behavior`` is
+        ``indent``, which would silently drop the key before the app's Esc-x3 quit
+        handler sees it. Consuming it here keeps the caret in the input and lets the
+        quit counter still see the press.
+        """
+        from rqark_tui.tui.components.quit_handler import QuitHandler
+
+        if isinstance(self.app, QuitHandler):
+            self.app.note_escape()
+
     async def _on_key(self, event: events.Key) -> None:
         """Intercept Enter to submit, and let Shift/Ctrl+Enter insert newlines.
 
@@ -280,6 +293,11 @@ class ChatInput(TextArea):
                 event.prevent_default()
                 popup.hide()
                 return
+        if event.key == 'escape':
+            event.stop()
+            event.prevent_default()
+            self._note_escape()
+            return
         if event.key == 'enter':
             event.stop()
             event.prevent_default()

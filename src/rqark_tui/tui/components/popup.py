@@ -53,6 +53,7 @@ class PopupSelector(Static):
         self._selectable = True
         self._selected = max(0, min(index, len(self._entries) - 1))
         self._scroll = 0
+        self._adjust_scroll()
         self._apply_title(title)
         self.display = bool(self._entries)
         self._update_counter()

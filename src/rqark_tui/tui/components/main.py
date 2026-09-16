@@ -10,6 +10,7 @@ from rich.text import Text
 from textual import events
 from textual.geometry import Offset
 from textual.strip import Strip
+from textual.timer import Timer
 from textual.widgets import RichLog
 
 from rqark_tui.tui.clipboard import write_system_clipboard
@@ -104,7 +105,13 @@ class MessagePane(RichLog):
     timestamp and a ``[copy]`` button right-aligned, followed by the body.
     Reasoning and tool results render as collapsible accordions (expanded by
     default). Mouse selection / Ctrl+C / Ctrl+A copy behaviour is preserved.
+
+    Streaming deltas only mutate the block model; the widget re-renders at most
+    once per ``FLUSH_INTERVAL_SECONDS`` (see :meth:`_mark_dirty`), so a long
+    stream costs O(text) renders instead of one full re-render per token.
     """
+
+    FLUSH_INTERVAL_SECONDS = 0.2
 
     DEFAULT_CSS = """
     MessagePane {
@@ -136,9 +143,20 @@ class MessagePane(RichLog):
         self._selection_anchor: tuple[int, int] | None = None
         self._needs_initial_rebuild = True
         self._tool_keys: dict[str, str] = {}
+        self._dirty_index: int | None = None
+        self._flush_timer: Timer | None = None
 
     def set_tool_keys(self, tool_keys: dict[str, str]) -> None:
         self._tool_keys = tool_keys
+
+    def on_mount(self) -> None:
+        self._flush_timer = self.set_interval(self.FLUSH_INTERVAL_SECONDS, self._flush_now)
+
+    def on_unmount(self) -> None:
+        if self._flush_timer is not None:
+            self._flush_timer.stop()
+            self._flush_timer = None
+        self._dirty_index = None
 
     def on_resize(self, event) -> None:
         super().on_resize(event)
@@ -158,6 +176,7 @@ class MessagePane(RichLog):
         return at.strftime('%Y-%m-%d %H:%M:%S')
 
     def append_message(self, text: str, at: datetime | None = None) -> None:
+        self._flush_now()
         self._close_last()
         self._new_block('user', at, [('body', '', text)])
         self._rewrite_tail(len(self._blocks) - 1)
@@ -167,7 +186,7 @@ class MessagePane(RichLog):
         if not block.sections or block.sections[-1].mode != 'body':
             block.sections.append(_Section('body', '', ''))
         block.sections[-1].text += text
-        self._rewrite_tail(idx)
+        self._mark_dirty(idx)
 
     def append_think_delta(self, text: str, at: datetime | None = None) -> None:
         idx, block = self._open_agent(at)
@@ -175,12 +194,14 @@ class MessagePane(RichLog):
             block.sections[0].text += text
         else:
             block.sections.insert(0, _Section('think', 'thinking', text, collapsed=True))
-        self._rewrite_tail(idx)
+        self._mark_dirty(idx)
 
     def close_agent_message(self) -> None:
         self._close_last()
+        self._flush_now()
 
     def append_tool_call(self, name: str, arguments: str = '', at: datetime | None = None) -> None:
+        self._flush_now()
         if self._blocks and self._blocks[-1].kind == 'tools' and self._blocks[-1].open:
             block = self._blocks[-1]
             idx = len(self._blocks) - 1
@@ -193,6 +214,7 @@ class MessagePane(RichLog):
         self._rewrite_tail(idx)
 
     def append_tool_result(self, name: str, content: str, at: datetime | None = None) -> None:
+        self._flush_now()
         if self._blocks and self._blocks[-1].kind == 'tools':
             block = self._blocks[-1]
             block.open = True
@@ -205,11 +227,13 @@ class MessagePane(RichLog):
         self._rewrite_tail(idx)
 
     def append_error(self, text: str, at: datetime | None = None) -> None:
+        self._flush_now()
         self._close_last()
         self._new_block('system', at, [('error', '', text)])
         self._rewrite_tail(len(self._blocks) - 1)
 
     def append_system(self, text: str, at: datetime | None = None) -> None:
+        self._flush_now()
         self._close_last()
         self._new_block('system', at, [('sys', '', text)])
         self._rewrite_tail(len(self._blocks) - 1)
@@ -244,13 +268,26 @@ class MessagePane(RichLog):
         last = self._last_agent()
         if last is not None:
             return last
+        self._flush_now()
         self._close_last()
         block = self._new_block('agent', at, [])
         return len(self._blocks) - 1, block
 
+    def _mark_dirty(self, index: int) -> None:
+        """Queue a re-render of ``index`` for the next flush tick (never blocks the loop)."""
+        if self._dirty_index is None or index < self._dirty_index:
+            self._dirty_index = index
+
+    def _flush_now(self) -> None:
+        """Render the queued block immediately; structural edits must not wait for a tick."""
+        index = self._dirty_index
+        if index is not None:
+            self._rewrite_tail(index)
+
     def _rewrite_tail(self, idx: int) -> None:
         if not self._size_known:
             return
+        self._dirty_index = None
         block = self._blocks[idx]
         del self.lines[block.start:]
         self._line_cache.clear()
@@ -260,6 +297,7 @@ class MessagePane(RichLog):
         self._clear_selection()
 
     def _rebuild(self) -> None:
+        self._dirty_index = None
         del self.lines[:]
         self._line_cache.clear()
         self._message_spans.clear()
@@ -360,8 +398,8 @@ class MessagePane(RichLog):
 
     def action_copy_message(self, message_index: int) -> None:
         """Copy the whole message at ``message_index`` (invoked by the [copy] button)."""
-        if 0 <= message_index < len(self._message_texts):
-            self._copy_to_clipboards(self._message_texts[message_index])
+        if 0 <= message_index < len(self._blocks):
+            self._copy_to_clipboards(self._copy_text(self._blocks[message_index]))
             self._clear_selection()
 
     def action_toggle_section(self, block_index: int, section_index: int) -> None:
@@ -378,6 +416,7 @@ class MessagePane(RichLog):
 
     def clear(self) -> 'MessagePane':
         """Clear the log and any active selection."""
+        self._dirty_index = None
         self._blocks.clear()
         self._message_spans.clear()
         self._message_texts.clear()
@@ -429,6 +468,20 @@ class MessagePane(RichLog):
             return 0, end[1]
         return 0, _END_OF_LINE
 
+    def _fully_selected(self, index: int, start: tuple[int, int], end: tuple[int, int]) -> bool:
+        """True when every cell of the message at ``index`` lies inside the selection."""
+        span_start, span_end = self._message_spans[index]
+        if span_start < start[0] or span_end - 1 > end[0]:
+            return False
+        if span_start == start[0] and start[1] > 0:
+            return False
+        if span_end - 1 == end[0]:
+            row = span_end - 1
+            line = self.lines[row].text if row < len(self.lines) else ''
+            if end[1] < cell_len(line):
+                return False
+        return True
+
     def _selection_text(self) -> str:
         """Return the plain text covered by the current selection.
 
@@ -449,14 +502,10 @@ class MessagePane(RichLog):
         row = first_row
         while row <= last_row:
             span_index = self._span_for_row(row)
-            if span_index is not None:
-                span_start, span_end = self._message_spans[span_index]
-                if span_start >= first_row and span_end - 1 <= last_row:
-                    # Whole message selected: use the original (unwrapped) text.
-                    selected.append(self._message_texts[span_index])
-                    row = span_end
-                    continue
-            # Partial selection: crop this row's columns.
+            if span_index is not None and self._fully_selected(span_index, start, end):
+                selected.append(self._message_texts[span_index])
+                row = self._message_spans[span_index][1]
+                continue
             text = self.lines[row].text if row < len(self.lines) else ''
             col_start, col_end = self._column_range(row, start, end)
             selected.append(_crop_plain(text, col_start, col_end))

@@ -69,6 +69,13 @@ class QuitHandler(_AppBase):
         if event.key != 'escape' or self._quit_dialog_open:
             self._escape_presses = 0
             return
+        self.note_escape()
+
+    def note_escape(self) -> None:
+        """Count one Esc press, wherever it was handled (see ``ChatInput``)."""
+        if self._quit_dialog_open:
+            self._escape_presses = 0
+            return
         self._escape_presses += 1
         if self._escape_presses >= self.ESCAPE_EXIT_COUNT:
             self._escape_presses = 0
