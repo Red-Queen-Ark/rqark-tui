@@ -3,9 +3,9 @@ import asyncio
 from rich.markup import escape
 from rqark_app.agent.manager import AgentManager
 from rqark_app.app import AgentApp
+from rqark_app.config.manager import ConfigManager
 from rqark_core.types.chat import AssistantMessage, Chunk, UserMessage
 from rqark_core.types.event import AgentPayload
-from rqark_app.config.manager import ConfigManager
 
 from rqark_tui.tui import AgentTUI
 
