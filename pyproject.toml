@@ -1,6 +1,6 @@
 [project]
 name = "rqark-tui"
-version = "0.1.3"
+version = "0.1.4"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.14"
@@ -63,6 +63,9 @@ exclude = ["tests/"]
 
 [tool.ty.environment]
 python-platform = "all"
+
+[tool.pyright]
+exclude = ["tests"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

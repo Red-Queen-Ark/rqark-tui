@@ -613,3 +613,47 @@ async def test_single_click_without_drag_clears_the_selection():
         await pilot.mouse_up(MessagePane, offset=content_offset(pane, 2, 1))
         assert pane._has_selection is False
         assert pane._selection_anchor is None
+
+
+@pytest.mark.parametrize(
+    ('value', 'expected'),
+    [
+        ('plain text', 'plain text'),
+        ([{'type': 'text', 'text': 'one'}, {'type': 'text', 'text': 'two'}], 'one\ntwo'),
+        ([], ''),
+        (None, ''),
+        ({'type': 'image_url', 'image_url': {'url': 'https://example.com/a.png'}}, ''),
+        ({'type': 'text', 'text': 'wrapped'}, 'wrapped'),
+        (42, '42'),
+    ],
+)
+def test_content_text_normalises_provider_content_parts(value, expected):
+    assert main_module._content_text(value) == expected
+
+
+async def test_user_message_with_content_parts_renders_its_text():
+    async with PaneApp().run_test(size=(20, 40)) as pilot:
+        pane = pilot.app.query_one(MessagePane)
+        await pilot.pause()
+        pane.append_message([{'type': 'text', 'text': '@src/rqark_tui/tui/ 點解佢成日會整死我 vscode'}])
+        assert '@src/rqark_tui/tui/ 點解佢成日會整死我 vscode' in rendered_text(pane).replace('\n', '')
+        assert pane._blocks[0].sections[0].text == '@src/rqark_tui/tui/ 點解佢成日會整死我 vscode'
+        assert pane._message_texts[0].endswith('@src/rqark_tui/tui/ 點解佢成日會整死我 vscode')
+
+
+async def test_streaming_delta_accepts_content_parts():
+    async with PaneApp().run_test(size=(20, 40)) as pilot:
+        pane = pilot.app.query_one(MessagePane)
+        await pilot.pause()
+        pane.append_agent_delta('start ')
+        pane.append_agent_delta([{'type': 'text', 'text': 'end'}])
+        pane.close_agent_message()
+        assert 'start end' in rendered_text(pane)
+
+
+async def test_think_delta_accepts_content_parts():
+    async with PaneApp().run_test(size=(20, 40)) as pilot:
+        pane = pilot.app.query_one(MessagePane)
+        await pilot.pause()
+        pane.append_think_delta([{'type': 'text', 'text': 'binary search'}])
+        assert pane._blocks[0].sections[0].text == 'binary search'

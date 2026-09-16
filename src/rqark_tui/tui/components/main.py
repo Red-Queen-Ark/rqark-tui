@@ -31,12 +31,28 @@ _LABEL_COLORS = {
 _ACCENT = '#4FC1FF'
 
 
+def _content_text(value: object) -> str:
+    if isinstance(value, str):
+        return value
+    if isinstance(value, list | tuple):
+        return '\n'.join(part for part in (_content_text(item) for item in value) if part)
+    if isinstance(value, dict):
+        text = value.get('text')
+        return _content_text(text) if text is not None else ''
+    if value is None:
+        return ''
+    return str(value)
+
+
 @dataclass
 class _Section:
     mode: str
     name: str
     text: str = ''
     collapsed: bool = False
+
+    def __post_init__(self) -> None:
+        self.text = _content_text(self.text)
 
 
 @dataclass
@@ -185,13 +201,13 @@ class MessagePane(RichLog):
         idx, block = self._open_agent(at)
         if not block.sections or block.sections[-1].mode != 'body':
             block.sections.append(_Section('body', '', ''))
-        block.sections[-1].text += text
+        block.sections[-1].text += _content_text(text)
         self._mark_dirty(idx)
 
     def append_think_delta(self, text: str, at: datetime | None = None) -> None:
         idx, block = self._open_agent(at)
         if block.sections and block.sections[0].mode == 'think':
-            block.sections[0].text += text
+            block.sections[0].text += _content_text(text)
         else:
             block.sections.insert(0, _Section('think', 'thinking', text, collapsed=True))
         self._mark_dirty(idx)

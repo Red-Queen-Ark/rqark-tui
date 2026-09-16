@@ -1,7 +1,7 @@
 import asyncio
 from collections.abc import Sequence
 
-from rqark_app.types.session import SummaryMessage
+from rqark_app.types.session import SummaryMessage, message_from_dict
 from rqark_core.types.chat import AssistantMessage, Message, SystemMessage, ToolMessage, UserMessage
 from rqark_core.types.tool import PlanItem
 
@@ -64,6 +64,17 @@ async def test_restored_user_message_is_replayed():
         pane = tui.query_one(MessagePane)
         assert 'hi' in rendered_text(pane)
         assert tui._restore_messages is None
+
+
+async def test_restored_user_message_with_content_parts_is_replayed():
+    message = message_from_dict({'role': 'user', 'content': [{'type': 'text', 'text': 'restored parts'}], 'created_at': '2026-09-16T04:16:55.894142+00:00'})
+    tui = AgentTUI()
+    tui.restore_session([message])
+    async with tui.run_test(size=(40, 100)) as pilot:
+        await pilot.pause()
+        pane = tui.query_one(MessagePane)
+        assert 'restored parts' in rendered_text(pane)
+        assert pane._blocks[0].sections[0].text == 'restored parts'
 
 
 async def test_restored_reasoning_stays_collapsed():
