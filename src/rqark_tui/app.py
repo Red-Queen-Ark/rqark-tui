@@ -18,17 +18,17 @@ from rqark_tui.tui.event_handler import EventHandler
 async def connect_agent_event_to_tui(app: AgentApp, tui: AgentTUI):
     @app.on_think()
     async def think(ev: AgentPayload[Chunk]) -> None:
-        tui.append_think_delta(str(ev.payload.content))
+        tui.append_think_delta(str(ev.payload.content), agent_id=ev.agent_id, path=ev.path)
 
     @app.on_content()
     async def content(ev: AgentPayload[Chunk]) -> None:
-        tui.append_agent_delta(str(ev.payload.content))
+        tui.append_agent_delta(str(ev.payload.content), agent_id=ev.agent_id, path=ev.path)
 
     @app.on_tool_calls()
     async def tool_calls(ev: AgentPayload[Chunk]) -> None:
         if isinstance(ev.payload.content, list):
             for call in ev.payload.content:
-                tui.append_tool_call(call.name, call.arguments)
+                tui.append_tool_call(call.name, call.arguments, agent_id=ev.agent_id, path=ev.path)
 
     @app.on_tool_result()
     async def tool_result(ev: AgentPayload[ToolMessage]) -> None:
@@ -36,7 +36,7 @@ async def connect_agent_event_to_tui(app: AgentApp, tui: AgentTUI):
         if not isinstance(tm, ToolMessage):
             tm = tm.content if isinstance(getattr(tm, 'content', None), ToolMessage) else None
         if tm is not None:
-            tui.append_tool_result(tm.tool_name or '', tm.content)
+            tui.append_tool_result(tm.tool_name or '', tm.content, agent_id=ev.agent_id, path=ev.path)
 
     @app.on_error()
     async def error(ev: AgentPayload[Chunk]) -> None:
@@ -44,7 +44,7 @@ async def connect_agent_event_to_tui(app: AgentApp, tui: AgentTUI):
 
     @app.on_message()
     async def message(ev: AgentPayload[Message]) -> None:
-        tui.close_agent_message()
+        tui.close_agent_message(ev.agent_id, ev.path)
 
     @app.on_plan()
     async def plan(ev: AgentPayload[list[PlanItem]]) -> None:

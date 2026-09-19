@@ -110,34 +110,52 @@ class AgentTUI(QuitHandler, App):
                 self.append_message(m.content, at, m.images)
             elif isinstance(m, AssistantMessage):
                 if m.reasoning_content:
-                    self.append_think_delta(m.reasoning_content, at)
+                    self.append_think_delta(m.reasoning_content, at, self._agent_name)
                 if m.content:
-                    self.append_agent_delta(m.content, at)
+                    self.append_agent_delta(m.content, at, self._agent_name)
                 if m.tool_calls:
                     for call in m.tool_calls:
-                        self.append_tool_call(call.name, call.arguments, at)
+                        self.append_tool_call(call.name, call.arguments, at, self._agent_name)
                 else:
-                    self.close_agent_message()
+                    self.close_agent_message(self._agent_name)
             elif isinstance(m, ToolMessage):
-                self.append_tool_result(m.tool_name or '', m.content, at)
+                self.append_tool_result(m.tool_name or '', m.content, at, self._agent_name)
 
     def append_message(self, text: str, at: datetime | None = None, images: Sequence[str] | None = None) -> None:
         self.query_one(MessagePane).append_message(text, at, images)
 
-    def append_agent_delta(self, text: str, at: datetime | None = None) -> None:
-        self.query_one(MessagePane).append_agent_delta(text, at)
+    def append_agent_delta(
+        self, text: str, at: datetime | None = None, agent_id: str = '', path: tuple[str, ...] = ()
+    ) -> None:
+        self.query_one(MessagePane).append_agent_delta(text, at, agent_id, path)
 
-    def append_think_delta(self, text: str, at: datetime | None = None) -> None:
-        self.query_one(MessagePane).append_think_delta(text, at)
+    def append_think_delta(
+        self, text: str, at: datetime | None = None, agent_id: str = '', path: tuple[str, ...] = ()
+    ) -> None:
+        self.query_one(MessagePane).append_think_delta(text, at, agent_id, path)
 
-    def close_agent_message(self) -> None:
-        self.query_one(MessagePane).close_agent_message()
+    def close_agent_message(self, agent_id: str = '', path: tuple[str, ...] = ()) -> None:
+        self.query_one(MessagePane).close_agent_message(agent_id, path)
 
-    def append_tool_call(self, name: str, arguments: str = '', at: datetime | None = None) -> None:
-        self.query_one(MessagePane).append_tool_call(name, arguments, at)
+    def append_tool_call(
+        self,
+        name: str,
+        arguments: str = '',
+        at: datetime | None = None,
+        agent_id: str = '',
+        path: tuple[str, ...] = (),
+    ) -> None:
+        self.query_one(MessagePane).append_tool_call(name, arguments, at, agent_id, path)
 
-    def append_tool_result(self, name: str, content: str, at: datetime | None = None) -> None:
-        self.query_one(MessagePane).append_tool_result(name, content, at)
+    def append_tool_result(
+        self,
+        name: str,
+        content: str,
+        at: datetime | None = None,
+        agent_id: str = '',
+        path: tuple[str, ...] = (),
+    ) -> None:
+        self.query_one(MessagePane).append_tool_result(name, content, at, agent_id, path)
 
     def append_error(self, text: str, at: datetime | None = None) -> None:
         self.query_one(MessagePane).append_error(text, at)

@@ -290,6 +290,45 @@ async def test_copy_text_includes_tool_arguments_and_results():
         assert pane._copy_text(pane._blocks[1]) == 'Agent\nuse tool bash ls -la\nfile list'
 
 
+MAIN_AGENT = 'angel-holiday:session-uuid'
+SUB_AGENT = '0f8a1c2d-3e4f-5a6b-7c8d-9e0f1a2b3c4d'
+
+
+async def test_agent_header_labels_the_main_agent_by_name_and_subagents_by_id():
+    async with PaneApp().run_test(size=(40, 120)) as pilot:
+        pane = pilot.app.query_one(MessagePane)
+        await pilot.pause()
+        pane.append_agent_delta('main answer', agent_id=MAIN_AGENT)
+        pane.close_agent_message(MAIN_AGENT)
+        pane.append_agent_delta('sub answer', agent_id=SUB_AGENT, path=(MAIN_AGENT,))
+        pane.close_agent_message(SUB_AGENT, (MAIN_AGENT,))
+        headers = [line.text for line in pane.lines if line.text.startswith('Agent')]
+        assert headers[0].startswith('Agent - angel-holiday ')
+        assert headers[1].startswith('Agent - 0f8a1c2d ')
+        assert pane._copy_text(pane._blocks[1]).startswith('Agent - 0f8a1c2d')
+
+
+async def test_subagent_stream_does_not_merge_into_the_main_agent_block():
+    async with PaneApp().run_test(size=(40, 120)) as pilot:
+        pane = pilot.app.query_one(MessagePane)
+        await pilot.pause()
+        pane.append_agent_delta('main ', agent_id=MAIN_AGENT)
+        pane.append_tool_call('subagent', '{}', agent_id=MAIN_AGENT)
+        pane.append_agent_delta('sub ', agent_id=SUB_AGENT, path=(MAIN_AGENT,))
+        pane.append_tool_result('subagent', 'done', agent_id=MAIN_AGENT)
+        pane.append_agent_delta('resumed', agent_id=MAIN_AGENT)
+        assert [(block.kind, block.agent) for block in pane._blocks] == [
+            ('agent', 'angel-holiday'),
+            ('tools', 'angel-holiday'),
+            ('agent', '0f8a1c2d'),
+            ('tools', 'angel-holiday'),
+            ('agent', 'angel-holiday'),
+        ]
+        assert pane._blocks[0].sections[-1].text == 'main '
+        assert pane._blocks[2].sections[-1].text == 'sub '
+        assert pane._blocks[4].sections[-1].text == 'resumed'
+
+
 async def test_tool_display_falls_back_to_raw_arguments_on_bad_json():
     async with PaneApp().run_test(size=(40, 100)) as pilot:
         pane = pilot.app.query_one(MessagePane)

@@ -31,6 +31,18 @@ _LABEL_COLORS = {
 
 _ACCENT = '#4FC1FF'
 
+#: Characters of a subagent id kept in the header label.
+_AGENT_ID_PREFIX = 8
+
+
+def _agent_label(agent_id: str, path: tuple[str, ...]) -> str:
+    """Name the agent behind an event: agent name for the main agent, short id for a subagent."""
+    if not agent_id:
+        return ''
+    if path:
+        return agent_id[:_AGENT_ID_PREFIX]
+    return agent_id.partition(':')[0]
+
 
 def _content_text(value: object) -> str:
     if isinstance(value, str):
@@ -60,6 +72,7 @@ class _Section:
 class _Block:
     kind: str
     time: str
+    agent: str = ''
     sections: list[_Section] = field(default_factory=list)
     open: bool = True
     start: int = 0
@@ -118,8 +131,10 @@ def _apply_selection_style(strip: Strip, start: int, end: int) -> Strip:
 class MessagePane(RichLog):
     """Scrollable message area showing the submitted messages.
 
-    Each message gets a header row (``User`` / ``Agent`` / ``System``) with the
-    timestamp and a ``[copy]`` button right-aligned, followed by the body.
+    Each message gets a header row (``User`` / ``Agent <name>`` / ``System``)
+    with the timestamp and a ``[copy]`` button right-aligned, followed by the
+    body. Agent blocks are labelled with the emitting agent (the agent name for
+    the main agent, a short id for a subagent) so both are told apart.
     Reasoning and tool results render as collapsible accordions (expanded by
     default). Mouse selection / Ctrl+C / Ctrl+A copy behaviour is preserved.
 
@@ -203,46 +218,66 @@ class MessagePane(RichLog):
         self._new_block('user', at, sections)
         self._rewrite_tail(len(self._blocks) - 1)
 
-    def append_agent_delta(self, text: str, at: datetime | None = None) -> None:
-        idx, block = self._open_agent(at)
+    def append_agent_delta(
+        self, text: str, at: datetime | None = None, agent_id: str = '', path: tuple[str, ...] = ()
+    ) -> None:
+        idx, block = self._open_agent(at, agent_id, path)
         if not block.sections or block.sections[-1].mode != 'body':
             block.sections.append(_Section('body', '', ''))
         block.sections[-1].text += _content_text(text)
         self._mark_dirty(idx)
 
-    def append_think_delta(self, text: str, at: datetime | None = None) -> None:
-        idx, block = self._open_agent(at)
+    def append_think_delta(
+        self, text: str, at: datetime | None = None, agent_id: str = '', path: tuple[str, ...] = ()
+    ) -> None:
+        idx, block = self._open_agent(at, agent_id, path)
         if block.sections and block.sections[0].mode == 'think':
             block.sections[0].text += _content_text(text)
         else:
             block.sections.insert(0, _Section('think', 'thinking', text, collapsed=True))
         self._mark_dirty(idx)
 
-    def close_agent_message(self) -> None:
-        self._close_last()
+    def close_agent_message(self, agent_id: str = '', path: tuple[str, ...] = ()) -> None:
+        self._close_agent(_agent_label(agent_id, path))
         self._flush_now()
 
-    def append_tool_call(self, name: str, arguments: str = '', at: datetime | None = None) -> None:
+    def append_tool_call(
+        self,
+        name: str,
+        arguments: str = '',
+        at: datetime | None = None,
+        agent_id: str = '',
+        path: tuple[str, ...] = (),
+    ) -> None:
         self._flush_now()
-        if self._blocks and self._blocks[-1].kind == 'tools' and self._blocks[-1].open:
+        agent = _agent_label(agent_id, path)
+        if self._blocks and self._blocks[-1].kind == 'tools' and self._blocks[-1].open and self._blocks[-1].agent == agent:
             block = self._blocks[-1]
             idx = len(self._blocks) - 1
         else:
             self._close_last()
-            self._new_block('tools', at, [])
+            self._new_block('tools', at, [], agent)
             block = self._blocks[-1]
             idx = len(self._blocks) - 1
         block.sections.append(_Section('tool', name, arguments))
         self._rewrite_tail(idx)
 
-    def append_tool_result(self, name: str, content: str, at: datetime | None = None) -> None:
+    def append_tool_result(
+        self,
+        name: str,
+        content: str,
+        at: datetime | None = None,
+        agent_id: str = '',
+        path: tuple[str, ...] = (),
+    ) -> None:
         self._flush_now()
-        if self._blocks and self._blocks[-1].kind == 'tools':
+        agent = _agent_label(agent_id, path)
+        if self._blocks and self._blocks[-1].kind == 'tools' and self._blocks[-1].agent == agent:
             block = self._blocks[-1]
             block.open = True
             idx = len(self._blocks) - 1
         else:
-            self._new_block('tools', at, [])
+            self._new_block('tools', at, [], agent)
             block = self._blocks[-1]
             idx = len(self._blocks) - 1
         block.sections.append(_Section('result', name or 'tool', content.strip(), collapsed=True))
@@ -262,8 +297,10 @@ class MessagePane(RichLog):
 
     # --- block bookkeeping --------------------------------------------------
 
-    def _new_block(self, kind: str, at: datetime | None, sections: list[tuple[str, str, str]]) -> _Block:
-        block = _Block(kind, self._format_time(at))
+    def _new_block(
+        self, kind: str, at: datetime | None, sections: list[tuple[str, str, str]], agent: str = ''
+    ) -> _Block:
+        block = _Block(kind, self._format_time(at), agent)
         for mode, name, text in sections:
             block.sections.append(_Section(mode, name, text))
         block.start = len(self.lines)
@@ -274,25 +311,33 @@ class MessagePane(RichLog):
         if self._blocks and self._blocks[-1].open:
             self._blocks[-1].open = False
 
-    def _last_agent(self) -> tuple[int, _Block] | None:
+    def _close_agent(self, agent: str) -> None:
+        if not self._blocks:
+            return
+        block = self._blocks[-1]
+        if block.open and block.kind == 'agent' and block.agent == agent:
+            block.open = False
+
+    def _last_agent(self, agent: str) -> tuple[int, _Block] | None:
         if not self._blocks:
             return None
         block = self._blocks[-1]
-        if not block.open or block.kind not in ('agent', 'tools'):
-            return None
-        if block.kind == 'tools':
+        if not block.open or block.kind != 'agent' or block.agent != agent:
             return None
         if any(s.mode == 'tool' for s in block.sections):
             return None
         return len(self._blocks) - 1, block
 
-    def _open_agent(self, at: datetime | None) -> tuple[int, _Block]:
-        last = self._last_agent()
+    def _open_agent(
+        self, at: datetime | None, agent_id: str = '', path: tuple[str, ...] = ()
+    ) -> tuple[int, _Block]:
+        agent = _agent_label(agent_id, path)
+        last = self._last_agent(agent)
         if last is not None:
             return last
         self._flush_now()
         self._close_last()
-        block = self._new_block('agent', at, [])
+        block = self._new_block('agent', at, [], agent)
         return len(self._blocks) - 1, block
 
     def _mark_dirty(self, index: int) -> None:
@@ -368,7 +413,7 @@ class MessagePane(RichLog):
         self.scroll_end(animate=False)
 
     def _header_row(self, block: _Block, idx: int) -> Text:
-        label = 'Agent' if block.kind in ('agent', 'tools') else block.kind.title()
+        label = self._block_label(block)
         head = Text()
         head.append(f'{label} ', Style(bold=True, color=_LABEL_COLORS.get(block.kind, '#808080')))
         dt = block.time
@@ -376,6 +421,14 @@ class MessagePane(RichLog):
         head.append(dt, Style(dim=True, color='#808080'))
         head.append(' [copy]', Style(color=_ACCENT, meta={'@click': f'copy_message({idx})'}))
         return head
+
+    @staticmethod
+    def _block_label(block: _Block) -> str:
+        if block.kind not in ('agent', 'tools'):
+            return block.kind.title()
+        if not block.agent:
+            return 'Agent'
+        return f'Agent - {block.agent}'
 
     def _tool_display(self, section: _Section) -> str:
         key = self._tool_keys.get(section.name)
@@ -389,8 +442,7 @@ class MessagePane(RichLog):
         return section.text[:40] if section.text else ''
 
     def _copy_text(self, block: _Block) -> str:
-        label = 'Agent' if block.kind in ('agent', 'tools') else block.kind.title()
-        parts = [label]
+        parts = [self._block_label(block)]
         for section in block.sections:
             if section.mode == 'tool':
                 display = self._tool_display(section)
