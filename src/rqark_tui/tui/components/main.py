@@ -1,4 +1,5 @@
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -191,10 +192,15 @@ class MessagePane(RichLog):
             at = at.astimezone()
         return at.strftime('%Y-%m-%d %H:%M:%S')
 
-    def append_message(self, text: str, at: datetime | None = None) -> None:
+    def append_message(self, text: str, at: datetime | None = None, images: Sequence[str] | None = None) -> None:
         self._flush_now()
         self._close_last()
-        self._new_block('user', at, [('body', '', text)])
+        sections: list[tuple[str, str, str]] = []
+        if text:
+            sections.append(('body', '', text))
+        for index in range(len(images) if images is not None else 0):
+            sections.append(('image', '', f'[image {index + 1}]'))
+        self._new_block('user', at, sections)
         self._rewrite_tail(len(self._blocks) - 1)
 
     def append_agent_delta(self, text: str, at: datetime | None = None) -> None:
@@ -336,6 +342,8 @@ class MessagePane(RichLog):
                     rows.append(Markdown(section.text))
                 elif section.text:
                     rows.append(Text(section.text, style=Style(color='#ffffff')))
+            elif section.mode == 'image':
+                rows.append(Text(section.text, style=Style(color=_ACCENT)))
             elif section.mode == 'think':
                 rows.append(self._accordion_row(section, idx, si))
                 if not section.collapsed and section.text:

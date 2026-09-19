@@ -231,7 +231,7 @@ async def test_chat_submission_reaches_the_handler():
     tui = AgentTUI()
     received: list[str] = []
 
-    async def handler(text: str) -> None:
+    async def handler(text: str, images: list[str]) -> None:
         received.append(text)
 
     tui.set_chat_handler(handler)
@@ -249,7 +249,7 @@ async def test_second_submission_is_rejected_while_busy():
     tui = AgentTUI()
     received: list[str] = []
 
-    async def handler(text: str) -> None:
+    async def handler(text: str, images: list[str]) -> None:
         received.append(text)
 
     tui.set_chat_handler(handler)
@@ -266,7 +266,7 @@ async def test_second_submission_is_rejected_while_busy():
 async def test_chat_handler_errors_clear_the_busy_flag():
     tui = AgentTUI()
 
-    async def handler(text: str) -> None:
+    async def handler(text: str, images: list[str]) -> None:
         raise RuntimeError('model exploded')
 
     tui.set_chat_handler(handler)
@@ -282,7 +282,7 @@ async def test_cancel_chat_cancels_the_running_worker():
     tui = AgentTUI()
     started: list[str] = []
 
-    async def handler(text: str) -> None:
+    async def handler(text: str, images: list[str]) -> None:
         started.append(text)
         await asyncio.sleep(30)
 
@@ -385,3 +385,34 @@ async def test_screen_background_is_the_dark_theme_colour():
     async with tui.run_test(size=(40, 100)) as pilot:
         await pilot.pause()
         assert tui.screen.styles.background.hex == '#141414'
+
+
+async def test_submitted_images_reach_the_handler(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / 'photo.png').write_bytes(b'\x89PNG\r\n\x1a\n' + b'\x00' * 16)
+    tui = AgentTUI()
+    received: list[tuple[str, list[str]]] = []
+
+    async def handler(text: str, images: list[str]) -> None:
+        received.append((text, images))
+
+    tui.set_chat_handler(handler)
+    async with tui.run_test(size=(40, 100)) as pilot:
+        await pilot.pause()
+        tui.query_one(ChatInput).text = 'see @!photo.png'
+        await pilot.press('enter')
+        await pilot.pause(0.1)
+        assert received[0][0] == 'see'
+        assert len(received[0][1]) == 1
+        assert received[0][1][0].startswith('data:image/png;base64,')
+        assert '[image 1]' in rendered_text(tui.query_one(MessagePane))
+
+
+async def test_restored_user_message_with_images_is_replayed():
+    tui = AgentTUI()
+    tui.restore_session([UserMessage('old picture', images=['data:image/png;base64,AAAA'])])
+    async with tui.run_test(size=(40, 100)) as pilot:
+        await pilot.pause()
+        text = rendered_text(tui.query_one(MessagePane))
+        assert 'old picture' in text
+        assert '[image 1]' in text

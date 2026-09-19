@@ -657,3 +657,24 @@ async def test_think_delta_accepts_content_parts():
         await pilot.pause()
         pane.append_think_delta([{'type': 'text', 'text': 'binary search'}])
         assert pane._blocks[0].sections[0].text == 'binary search'
+
+
+async def test_user_message_with_images_renders_placeholders():
+    async with PaneApp().run_test(size=(20, 60)) as pilot:
+        pane = pilot.app.query_one(MessagePane)
+        await pilot.pause()
+        pane.append_message('look at this', images=['data:image/png;base64,AAAA', 'data:image/png;base64,BBBB'])
+        text = rendered_text(pane)
+        assert '[image 1]' in text
+        assert '[image 2]' in text
+        assert pane._blocks[0].sections[0].text == 'look at this'
+        assert pane._message_texts[0].endswith('[image 2]')
+
+
+async def test_image_only_message_renders_without_a_body():
+    async with PaneApp().run_test(size=(20, 60)) as pilot:
+        pane = pilot.app.query_one(MessagePane)
+        await pilot.pause()
+        pane.append_message('', images=['data:image/png;base64,AAAA'])
+        assert [section.mode for section in pane._blocks[0].sections] == ['image']
+        assert '[image 1]' in rendered_text(pane)

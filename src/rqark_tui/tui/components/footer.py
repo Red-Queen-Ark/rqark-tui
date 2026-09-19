@@ -10,6 +10,7 @@ from rqark_tui.tui.commands import slash_entries
 from rqark_tui.tui.components.file_match import FileMatcher
 from rqark_tui.tui.components.main import MessagePane
 from rqark_tui.tui.components.popup import Entry, PopupSelector
+from rqark_tui.tui.image_attach import attachment_data_uris, parse_attachments
 
 # --- macOS physical modifier-state detection ---------------------------------
 # Same trick as `libs/tui/input.py` on Windows (GetAsyncKeyState), but for macOS:
@@ -71,10 +72,11 @@ class ChatInput(TextArea):
     class Submitted(Message):
         """Posted when the user presses Enter to submit the current text."""
 
-        def __init__(self, chat_input: 'ChatInput', text: str) -> None:
+        def __init__(self, chat_input: 'ChatInput', text: str, images: list[str] | None = None) -> None:
             super().__init__()
             self.chat_input = chat_input
             self.text = text
+            self.images = images if images is not None else []
 
         @property
         def control(self) -> 'ChatInput':
@@ -110,6 +112,7 @@ class ChatInput(TextArea):
         """Grow/shrink the input height as the number of lines changes."""
         self._update_height()
         self._update_completion()
+        self._update_attachment_hint()
 
     def _update_height(self) -> None:
         """Set the widget height to fit the content: 1 line by default, growing up to MAX_LINES.
@@ -162,17 +165,29 @@ class ChatInput(TextArea):
         if on_done is not None:
             on_done(entry)
 
-    def _file_prefix(self) -> tuple[str, int | None]:
+    def _update_attachment_hint(self) -> None:
+        """Show how many `@!path` attachments the current text resolves to."""
+        _text, paths = parse_attachments(self.text)
+        count = len(paths)
+        if not count:
+            self.border_subtitle = ''
+            return
+        self.border_subtitle = f'📎 {count} image' if count == 1 else f'📎 {count} images'
+
+    def _file_prefix(self) -> tuple[str, int | None, bool]:
         before = self.document.get_text_range((0, 0), self.cursor_location)
         at_index = before.rfind('@')
         if at_index < 0:
-            return '', None
+            return '', None, False
         if at_index > 0 and before[at_index - 1] not in ' \t\n':
-            return '', None
+            return '', None, False
         rest = before[at_index + 1:]
+        attach = rest.startswith('!')
+        if attach:
+            rest = rest[1:]
         if any(char.isspace() for char in rest):
-            return '', None
-        return rest, at_index
+            return '', None, False
+        return rest, at_index, attach
 
     def _update_completion(self) -> None:
         popup = self._query_popup()
@@ -183,7 +198,7 @@ class ChatInput(TextArea):
         if self.document.line_count == 1 and self.text.startswith('/'):
             popup.show(slash_entries(self.text))
             return
-        prefix, at_index = self._file_prefix()
+        prefix, at_index, _attach = self._file_prefix()
         if at_index is not None:
             popup.show([(display, value) for display, value, _ in self._matcher.matches(prefix)], escape_labels=True)
             return
@@ -204,14 +219,15 @@ class ChatInput(TextArea):
             self.text = value
             self.submit()
             return
-        prefix, at_index = self._file_prefix()
+        prefix, at_index, attach = self._file_prefix()
         if at_index is None:
             popup.hide()
             return
         head = self.document.get_text_range((0, 0), self.cursor_location)[:at_index]
         row = head.count('\n')
         col = len(head) - (head.rfind('\n') + 1)
-        self.replace(f'@{value} ', (row, col), self.cursor_location)
+        marker = '@!' if attach else '@'
+        self.replace(f'{marker}{value} ', (row, col), self.cursor_location)
         popup.hide()
 
     def _note_escape(self) -> None:
@@ -314,11 +330,16 @@ class ChatInput(TextArea):
 
     def submit(self) -> None:
         """Send the current content and clear the input box."""
-        text = self.text.strip('\n')
-        if not text:
+        text, paths = parse_attachments(self.text)
+        text = text.strip()
+        images, skipped = attachment_data_uris(paths)
+        if skipped:
+            self.notify(f'Skipped {len(skipped)} image(s): too large or unreadable', severity='warning')
+        if not text and not images:
             return
         popup = self._query_popup()
         if popup is not None:
             popup.hide()
-        self.post_message(self.Submitted(self, text))
+        self.border_subtitle = ''
+        self.post_message(self.Submitted(self, text, images))
         self.clear()

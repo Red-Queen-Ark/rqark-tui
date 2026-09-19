@@ -30,6 +30,7 @@ class EventHandler:
         self._stream_active = False
         self._stop_requested = False
         self._last_chat_text = ''
+        self._last_chat_images: list[str] = []
         self._stream_content = ''
         self._stream_reasoning = ''
         self._register_stream_tracking()
@@ -50,8 +51,9 @@ class EventHandler:
         if titled is not None and titled.title:
             self.tui.set_session_title(titled.title)
 
-    async def chat(self, text: str) -> None:
+    async def chat(self, text: str, images: list[str] | None = None) -> None:
         self._last_chat_text = text
+        self._last_chat_images = list(images) if images else []
         self._stream_content = ''
         self._stream_reasoning = ''
         self._stream_active = True
@@ -60,10 +62,10 @@ class EventHandler:
             if self.session_id is None:
                 session = await self.app.session_mgr.create()
                 self.session_id = session.uuid
-            session = await self.app.chat(text, self.agent_mgr.agent, session_id=self.session_id)
+            session = await self.app.chat(text, self.agent_mgr.agent, session_id=self.session_id, images=images)
             self.session_id = session.uuid
             self.config_mgr.dir_cache.set_session_id(self.config_mgr.cwd_hash, self.session_id)
-            if not session.title:
+            if not session.title and text:
                 task = asyncio.create_task(self.gen_title(session.uuid, text))
                 self._title_tasks.add(task)
                 task.add_done_callback(self._title_tasks.discard)
@@ -86,7 +88,7 @@ class EventHandler:
         if session is None:
             return
         partial = AssistantMessage(content=content, reasoning_content=reasoning or None)
-        messages = [*session.get_last_chunk_for_chat(), UserMessage(self._last_chat_text), partial]
+        messages = [*session.get_last_chunk_for_chat(), UserMessage(self._last_chat_text, images=list(self._last_chat_images)), partial]
         session.update_history_to_last_chunk(messages)
         await self.app.session_mgr.save(session.uuid)
         self.config_mgr.dir_cache.set_session_id(self.config_mgr.cwd_hash, self.session_id)

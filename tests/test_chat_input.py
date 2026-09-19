@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 from textual.app import App, ComposeResult
 
@@ -14,6 +16,7 @@ class InputApp(App[None]):
     def __init__(self) -> None:
         super().__init__()
         self.submitted: list[str] = []
+        self.attached: list[list[str]] = []
 
     def compose(self) -> ComposeResult:
         yield MessagePane()
@@ -22,6 +25,7 @@ class InputApp(App[None]):
 
     def on_chat_input_submitted(self, event: ChatInput.Submitted) -> None:
         self.submitted.append(event.text)
+        self.attached.append(event.images)
 
 
 async def type_text(pilot, chat: ChatInput, text: str) -> None:
@@ -279,13 +283,16 @@ async def test_at_inside_a_word_does_not_open_completion(monkeypatch):
 @pytest.mark.parametrize(
     ('text', 'cursor', 'expected'),
     [
-        ('@', (0, 1), ('', 0)),
-        ('@ma', (0, 3), ('ma', 0)),
-        ('see @ma', (0, 7), ('ma', 4)),
-        ('see @ma no', (0, 7), ('ma', 4)),
-        ('mail@example', (0, 12), ('', None)),
-        ('see @a b', (0, 8), ('', None)),
-        ('plain', (0, 5), ('', None)),
+        ('@', (0, 1), ('', 0, False)),
+        ('@ma', (0, 3), ('ma', 0, False)),
+        ('see @ma', (0, 7), ('ma', 4, False)),
+        ('see @ma no', (0, 7), ('ma', 4, False)),
+        ('@!', (0, 2), ('', 0, True)),
+        ('@!ma', (0, 4), ('ma', 0, True)),
+        ('see @!ma', (0, 8), ('ma', 4, True)),
+        ('mail@example', (0, 12), ('', None, False)),
+        ('see @a b', (0, 8), ('', None, False)),
+        ('plain', (0, 5), ('', None, False)),
     ],
 )
 async def test_file_prefix_detection(text, cursor, expected):
@@ -416,3 +423,101 @@ async def test_input_query_is_dropped_when_the_popup_is_missing():
         chat.text = '/'
         await pilot.pause()
         assert chat.text == '/'
+
+
+def make_image(directory: Path, name: str = 'photo.png') -> Path:
+    path = directory / name
+    path.write_bytes(b'\x89PNG\r\n\x1a\n' + b'\x00' * 16)
+    return path
+
+
+async def test_at_bang_completion_keeps_the_attachment_marker(monkeypatch):
+    monkeypatch.setattr(footer_module.FileMatcher, 'matches', fake_matches([('photo.png', 'photo.png', False)]))
+    app = InputApp()
+    async with app.run_test(size=(40, 100)) as pilot:
+        chat = app.query_one(ChatInput)
+        await pilot.pause()
+        await type_text(pilot, chat, 'look at @!ph')
+        await pilot.press('enter')
+        await pilot.pause()
+        assert chat.text == 'look at @!photo.png '
+        assert app.submitted == []
+
+
+async def test_at_bang_completion_uses_the_stripped_prefix(monkeypatch):
+    seen: list[str] = []
+
+    def record(self, prefix):
+        seen.append(prefix)
+        return [('photo.png', 'photo.png', False)]
+
+    monkeypatch.setattr(footer_module.FileMatcher, 'matches', record)
+    app = InputApp()
+    async with app.run_test(size=(40, 100)) as pilot:
+        chat = app.query_one(ChatInput)
+        await pilot.pause()
+        await type_text(pilot, chat, '@!ph')
+        assert seen[-1] == 'ph'
+
+
+async def test_submit_attaches_a_supported_image(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    make_image(tmp_path)
+    app = InputApp()
+    async with app.run_test(size=(40, 100)) as pilot:
+        chat = app.query_one(ChatInput)
+        await pilot.pause()
+        chat.text = 'look @!photo.png'
+        await pilot.press('enter')
+        await pilot.pause()
+        assert app.submitted == ['look']
+        assert len(app.attached[0]) == 1
+        assert app.attached[0][0].startswith('data:image/png;base64,')
+        assert chat.text == ''
+
+
+async def test_submit_sends_an_image_only_message(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    make_image(tmp_path)
+    app = InputApp()
+    async with app.run_test(size=(40, 100)) as pilot:
+        chat = app.query_one(ChatInput)
+        await pilot.pause()
+        chat.text = '@!photo.png'
+        await pilot.press('enter')
+        await pilot.pause()
+        assert app.submitted == ['']
+        assert len(app.attached[0]) == 1
+
+
+async def test_submit_keeps_an_unsupported_token_as_text(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / 'notes.txt').write_text('hi')
+    app = InputApp()
+    async with app.run_test(size=(40, 100)) as pilot:
+        chat = app.query_one(ChatInput)
+        await pilot.pause()
+        chat.text = 'look @!notes.txt'
+        await pilot.press('enter')
+        await pilot.pause()
+        assert app.submitted == ['look @!notes.txt']
+        assert app.attached == [[]]
+
+
+async def test_attachment_hint_counts_the_resolved_images(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    make_image(tmp_path)
+    make_image(tmp_path, 'other.jpeg')
+    app = InputApp()
+    async with app.run_test(size=(40, 100)) as pilot:
+        chat = app.query_one(ChatInput)
+        await pilot.pause()
+        chat.text = 'see @!photo.png'
+        await pilot.pause()
+        assert chat.border_subtitle == '📎 1 image'
+        chat.text = 'see @!photo.png and @!other.jpeg'
+        await pilot.pause()
+        assert chat.border_subtitle == '📎 2 images'
+        chat.text = 'nothing attached'
+        await pilot.pause()
+        assert chat.border_subtitle == ''

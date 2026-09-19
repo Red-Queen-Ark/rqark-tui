@@ -157,8 +157,8 @@ class FakeApp:
         handler = self.handlers['content']
         await handler(cast(AgentPayload[Chunk], FakePayload(FakeChunk(text))))
 
-    async def chat(self, text: str, agent, session_id: str | None = None) -> Session:
-        self.chat_calls.append({'text': text, 'agent': agent, 'session_id': session_id})
+    async def chat(self, text: str, agent, session_id: str | None = None, images: list[str] | None = None) -> Session:
+        self.chat_calls.append({'text': text, 'agent': agent, 'session_id': session_id, 'images': images})
         session = await self.session_mgr.get(session_id) if session_id is not None else None
         if session is None:
             session = await self.session_mgr.create()
@@ -477,3 +477,37 @@ async def test_command_name_without_arguments_still_matches():
     handler, _app, tui, _config, _agents = build(pick_result=('label', '0'))
     assert await handler.command('/models   ') == 'Model: model-a -> model-a'
     assert tui.model_names == ['model-a']
+
+
+async def test_chat_forwards_the_attached_images():
+    handler, app, _tui, _config, _agents = build()
+    images = ['data:image/png;base64,AAAA']
+    await handler.chat('look at this', images)
+    assert app.chat_calls[0]['images'] == images
+
+
+async def test_chat_without_images_forwards_none():
+    handler, app, _tui, _config, _agents = build()
+    await handler.chat('hello')
+    assert app.chat_calls[0]['images'] is None
+
+
+async def test_stop_saves_the_partial_answer_with_its_images():
+    handler, app, _tui, _config, _agents = build()
+    session = await app.session_mgr.create()
+    handler.session_id = session.uuid
+    app.stream_content = 'partial answer'
+    images = ['data:image/png;base64,AAAA']
+    await stop_during_chat(handler, app)
+    await handler.chat('look', images)
+    saved_user = session.history[0]
+    assert isinstance(saved_user, UserMessage)
+    assert saved_user.images == images
+
+
+async def test_no_title_is_generated_for_an_image_only_message():
+    handler, app, tui, _config, _agents = build()
+    await handler.chat('', ['data:image/png;base64,AAAA'])
+    await asyncio.gather(*handler._title_tasks)
+    assert app.chat_helper.calls == []
+    assert tui.session_titles == []

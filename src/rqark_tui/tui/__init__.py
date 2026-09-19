@@ -46,7 +46,7 @@ class AgentTUI(QuitHandler, App):
         self._agent_name = ''
         self._model_name = ''
         self._session_title = ''
-        self._chat_handler: Callable[[str], Awaitable[None]] | None = None
+        self._chat_handler: Callable[[str, list[str]], Awaitable[None]] | None = None
         self._command_handler: Callable[[str], Awaitable[str | None]] | None = None
         self._chat_worker: Worker | None = None
         self._chat_busy = False
@@ -87,7 +87,7 @@ class AgentTUI(QuitHandler, App):
         if self.is_running:
             self.query_one(HeaderBar).session_title = title
 
-    def set_chat_handler(self, handler: Callable[[str], Awaitable[None]]) -> None:
+    def set_chat_handler(self, handler: Callable[[str, list[str]], Awaitable[None]]) -> None:
         self._chat_handler = handler
 
     def set_command_handler(self, handler: Callable[[str], Awaitable[str | None]]) -> None:
@@ -107,7 +107,7 @@ class AgentTUI(QuitHandler, App):
             if isinstance(m, (SummaryMessage, SystemMessage)):
                 self.append_system(m.content, at)
             elif isinstance(m, UserMessage):
-                self.append_message(m.content, at)
+                self.append_message(m.content, at, m.images)
             elif isinstance(m, AssistantMessage):
                 if m.reasoning_content:
                     self.append_think_delta(m.reasoning_content, at)
@@ -121,8 +121,8 @@ class AgentTUI(QuitHandler, App):
             elif isinstance(m, ToolMessage):
                 self.append_tool_result(m.tool_name or '', m.content, at)
 
-    def append_message(self, text: str, at: datetime | None = None) -> None:
-        self.query_one(MessagePane).append_message(text, at)
+    def append_message(self, text: str, at: datetime | None = None, images: Sequence[str] | None = None) -> None:
+        self.query_one(MessagePane).append_message(text, at, images)
 
     def append_agent_delta(self, text: str, at: datetime | None = None) -> None:
         self.query_one(MessagePane).append_agent_delta(text, at)
@@ -180,29 +180,30 @@ class AgentTUI(QuitHandler, App):
 
     def on_chat_input_submitted(self, event: ChatInput.Submitted) -> None:
         text = event.text
+        images = event.images
         if text.startswith('/') and self._command_handler is not None:
             self.run_worker(self._run_command(text), name='command', group='agent', exit_on_error=False)
             return
         if self._chat_busy:
             self.notify('Still processing — please wait', severity='warning', timeout=4)
             return
-        self.append_message(text)
+        self.append_message(text, images=images)
         if self._chat_handler is None:
             return
         self._chat_busy = True
         self._chat_worker = self.run_worker(
-            self._run_chat(text),
+            self._run_chat(text, images),
             name='agent-chat',
             group='agent',
             exit_on_error=False,
         )
 
-    async def _run_chat(self, text: str) -> None:
+    async def _run_chat(self, text: str, images: list[str]) -> None:
         handler = self._chat_handler
         if handler is None:
             return
         try:
-            await handler(text)
+            await handler(text, images)
         except Exception as error:
             self.notify(str(error), severity='error', timeout=8)
         finally:
