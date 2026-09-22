@@ -757,9 +757,9 @@ dependencies = [
     { name = "pyyaml" },
     { name = "rqark-core" },
 ]
-sdist = { url = "https://gitea.carhyme.top/api/packages/RedQueenArk/pypi/files/rqark-app/0.1.9/rqark_app-0.1.9.tar.gz", hash = "sha256:8c52c4ce53d133eac784a34f7b6851093c2ec0969b6b9fa3838d4cb91d1d9291" }
+sdist = { url = "https://gitea.carhyme.top/api/packages/RedQueenArk/pypi/files/rqark-app/0.1.9/rqark_app-0.1.9.tar.gz", hash = "sha256:766afb295911420ec516f0d13cdd2761ceeb65c35816f3acf4188245de5463a6" }
 wheels = [
-    { url = "https://gitea.carhyme.top/api/packages/RedQueenArk/pypi/files/rqark-app/0.1.9/rqark_app-0.1.9-py3-none-any.whl", hash = "sha256:31b7b7a5c57481309167601b127ea86b4411c2ccdcda8ddc623fa74fb15c2068" },
+    { url = "https://gitea.carhyme.top/api/packages/RedQueenArk/pypi/files/rqark-app/0.1.9/rqark_app-0.1.9-py3-none-any.whl", hash = "sha256:6122376e78b2f5dc0329f6da53e30ff84ddcec9b12c4a50eee66ba9dc5f75a03" },
 ]
 
 [[package]]
@@ -779,7 +779,7 @@ wheels = [
 
 [[package]]
 name = "rqark-tui"
-version = "0.2.0"
+version = "0.2.1"
 source = { editable = "." }
 dependencies = [
     { name = "rqark-app" },
