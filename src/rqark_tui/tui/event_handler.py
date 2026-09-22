@@ -107,12 +107,18 @@ class EventHandler:
         await self.app.session_mgr.save(session.uuid)
         self.config_mgr.dir_cache.set_session_id(self.config_mgr.cwd_hash, self.session_id)
 
+    def forget_session(self) -> None:
+        """Stop resuming this session in the directory: its stored transcript is gone."""
+        session_id, self.session_id = self.session_id, None
+        if session_id is not None:
+            self.config_mgr.dir_cache.remove_session_id(self.config_mgr.cwd_hash, session_id)
+
     async def close(self) -> None:
-        """Drop this session's stored transcript; the tab it belonged to is gone."""
+        """Delete this session's stored transcript; the tab it belonged to is gone."""
         if self.session_id is None:
             return
         await self.app.session_mgr.delete(self.session_id)
-        self.session_id = None
+        self.forget_session()
 
     async def command(self, command: str) -> str | None:
         name, _, arg = command.partition(' ')
@@ -122,7 +128,7 @@ class EventHandler:
                 self.tui.cancel_chat(self.key)
                 if self.session_id is not None:
                     await self.app.session_mgr.delete(self.session_id)
-                    self.session_id = None
+                    self.forget_session()
                 self._stream_content = ''
                 self._stream_reasoning = ''
                 self.tui.clear_session(self.key)

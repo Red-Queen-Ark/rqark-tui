@@ -5,14 +5,31 @@ from rqark_app.agent.manager import AgentManager
 from rqark_app.app import AgentApp, Message
 from rqark_app.config.default import AGENTS
 from rqark_app.config.manager import ConfigManager
+from rqark_app.session.manager import SessionManager
 from rqark_app.session.storage import JSONLStorage
 from rqark_app.types.event import ProviderSwitch
 from rqark_core.types.chat import Chunk, ToolMessage
 from rqark_core.types.event import AgentPayload
 from rqark_core.types.tool import PlanItem
 
-from rqark_tui.tui import AgentTUI
+from rqark_tui.tui import AgentTUI, Restored
 from rqark_tui.tui.event_handler import EventHandler
+
+
+async def restored_sessions(config_mgr: ConfigManager, session_mgr: SessionManager) -> list[Restored]:
+    """The sessions this directory remembers, most recently used first.
+
+    A remembered session whose transcript is gone (cleared or closed by another
+    run) is forgotten instead of being restored.
+    """
+    restored: list[Restored] = []
+    for session_id in config_mgr.dir_cache.get_session_ids(config_mgr.cwd_hash):
+        session = await session_mgr.get(session_id)
+        if session is None:
+            config_mgr.dir_cache.remove_session_id(config_mgr.cwd_hash, session_id)
+            continue
+        restored.append((session.uuid, session.title, session.get_last_chunk()))
+    return restored
 
 
 async def connect_agent_event_to_tui(app: AgentApp, tui: AgentTUI):
@@ -72,10 +89,7 @@ async def _main() -> None:
 
     await connect_agent_event_to_tui(app, tui)
 
-    session_id = config_mgr.dir_cache.get_session_id(config_mgr.cwd_hash)
-    session = await app.session_mgr.get(session_id) if session_id else None
-    if session is not None:
-        tui.open_session(session.uuid, session.title, session.get_last_chunk())
+    tui.open_sessions(await restored_sessions(config_mgr, app.session_mgr))
     await tui.run()
 
 

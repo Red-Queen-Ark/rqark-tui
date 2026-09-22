@@ -79,9 +79,13 @@ class FakeChatHelper:
 class FakeDirCache:
     def __init__(self) -> None:
         self.stored: list[tuple[str, str]] = []
+        self.forgotten: list[tuple[str, str]] = []
 
     def set_session_id(self, cwd_hash: str, session_id: str) -> None:
         self.stored.append((cwd_hash, session_id))
+
+    def remove_session_id(self, cwd_hash: str, session_id: str) -> None:
+        self.forgotten.append((cwd_hash, session_id))
 
 
 class FakeConfigManager:
@@ -550,3 +554,28 @@ async def test_no_title_is_generated_for_an_image_only_message():
     await asyncio.gather(*handler._title_tasks)
     assert app.chat_helper.calls == []
     assert tui.session_titles == []
+
+
+async def test_clear_forgets_the_session_in_the_dir_cache():
+    handler, app, _tui, config, _agents = build()
+    session = await app.session_mgr.create()
+    handler.session_id = session.uuid
+    assert await handler.command('/clear') == 'Conversation cleared'
+    assert config.dir_cache.forgotten == [('cwd-hash', session.uuid)]
+    assert handler.session_id is None
+
+
+async def test_closing_a_session_forgets_it_in_the_dir_cache():
+    handler, app, _tui, config, _agents = build()
+    session = await app.session_mgr.create()
+    handler.session_id = session.uuid
+    await handler.close()
+    assert app.session_mgr.deleted == [session.uuid]
+    assert config.dir_cache.forgotten == [('cwd-hash', session.uuid)]
+    assert handler.session_id is None
+
+
+async def test_closing_without_a_session_forgets_nothing():
+    handler, _app, _tui, config, _agents = build()
+    await handler.close()
+    assert config.dir_cache.forgotten == []

@@ -351,7 +351,7 @@ async def test_tool_keys_reach_every_pane():
 
 async def test_a_restored_session_is_the_first_tab():
     tui = AgentTUI()
-    tui.open_session('uuid-1', 'stored title', [UserMessage('old question')])
+    tui.open_sessions([('uuid-1', 'stored title', [UserMessage('old question')])])
     async with tui.run_test(size=(40, 100)) as pilot:
         await pilot.pause()
         assert tab_labels(tui) == ['stored title', '+']
@@ -370,21 +370,67 @@ async def test_a_restored_session_reuses_its_id_when_chatting():
         return bridge
 
     tui.set_session_factory(factory)
-    tui.open_session('uuid-1', 'stored title', [])
+    tui.open_sessions([('uuid-1', 'stored title', [])])
     async with tui.run_test(size=(40, 100)) as pilot:
         await pilot.pause()
         assert sessions == ['uuid-1']
         assert tui._sessions['session-1'].session_id == 'uuid-1'
 
 
-async def test_open_session_names_the_tab_from_stored_messages():
+async def test_open_sessions_names_the_tab_from_stored_messages():
     tui = AgentTUI()
     history: Sequence[UserMessage] = [UserMessage('hi')]
-    tui.open_session('uuid-1', '', list(history))
+    tui.open_sessions([('uuid-1', '', list(history))])
     async with tui.run_test(size=(40, 100)) as pilot:
         await pilot.pause()
         assert tab_labels(tui) == ['Session 1', '+']
         assert isinstance(pane_of(tui, 'session-1')._blocks[0].sections[0].text, str)
+
+
+async def test_every_stored_session_becomes_a_tab():
+    tui = AgentTUI()
+    tui.open_sessions([('uuid-1', 'first', [UserMessage('question one')]), ('uuid-2', 'second', [UserMessage('question two')])])
+    async with tui.run_test(size=(40, 100)) as pilot:
+        await pilot.pause()
+        assert tab_labels(tui) == ['first', 'second', '+']
+        assert 'question one' in rendered(pane_of(tui, 'session-1'))
+        assert 'question two' in sections_of(pane_of(tui, 'session-2'))
+        assert tui.session_key('Angel Holiday:uuid-2') == 'session-2'
+
+
+async def test_the_first_stored_session_is_the_one_on_screen():
+    tui = AgentTUI()
+    tui.open_sessions([('uuid-1', 'first', [UserMessage('question one')]), ('uuid-2', 'second', [])])
+    async with tui.run_test(size=(40, 100)) as pilot:
+        await pilot.pause()
+        assert tui.active_key == 'session-1'
+        assert pane_of(tui, 'session-1').display is True
+        assert pane_of(tui, 'session-2').display is False
+        assert tabs_of(tui).active == 'tab-session-1'
+        assert tui.query_one(HeaderBar).session_title == 'first'
+        assert tui.query_one(ChatInput).has_focus is True
+
+
+async def test_nothing_to_restore_opens_a_fresh_session():
+    tui = AgentTUI()
+    tui.open_sessions([])
+    async with tui.run_test(size=(40, 100)) as pilot:
+        await pilot.pause()
+        assert tab_labels(tui) == ['Session 1', '+']
+        assert tui.active_key == 'session-1'
+
+
+async def test_stored_sessions_added_while_running_show_the_first_one():
+    tui = AgentTUI()
+    async with tui.run_test(size=(40, 100)) as pilot:
+        await pilot.pause()
+        await pilot.click('#new-session')
+        await pilot.pause()
+        tui.open_sessions([('uuid-1', 'first', []), ('uuid-2', 'second', [])])
+        await pilot.pause()
+        assert tab_labels(tui) == ['Session 1', 'Session 2', 'first', 'second', '+']
+        assert tui.active_key == 'session-3'
+        assert pane_of(tui, 'session-3').display is True
 
 
 async def test_a_session_transcript_survives_a_tab_switch():

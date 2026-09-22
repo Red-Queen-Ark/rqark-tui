@@ -74,7 +74,7 @@ async def test_setters_before_running_store_values_without_querying():
     tui = AgentTUI()
     tui.set_agent_name('coder')
     tui.set_model_name('deepseek')
-    tui.open_session('stored-uuid', 'title', [])
+    tui.open_sessions([('stored-uuid', 'title', [])])
     assert (tui._agent_name, tui._model_name) == ('coder', 'deepseek')
     async with tui.run_test(size=(40, 100)) as pilot:
         await pilot.pause()
@@ -93,18 +93,18 @@ async def test_tool_keys_are_forwarded_to_the_message_pane():
 
 async def test_restored_user_message_is_replayed():
     tui = AgentTUI()
-    tui.open_session('stored-uuid', '', [UserMessage('hi')])
+    tui.open_sessions([('stored-uuid', '', [UserMessage('hi')])])
     async with tui.run_test(size=(40, 100)) as pilot:
         await pilot.pause()
         pane = tui.query_one(MessagePane)
         assert 'hi' in rendered_text(pane)
-        assert tui._pending is None
+        assert tui._pending == []
 
 
 async def test_restored_user_message_with_content_parts_is_replayed():
     message = message_from_dict({'role': 'user', 'content': [{'type': 'text', 'text': 'restored parts'}], 'created_at': '2026-09-16T04:16:55.894142+00:00'})
     tui = AgentTUI()
-    tui.open_session('stored-uuid', '', [message])
+    tui.open_sessions([('stored-uuid', '', [message])])
     async with tui.run_test(size=(40, 100)) as pilot:
         await pilot.pause()
         pane = tui.query_one(MessagePane)
@@ -114,7 +114,7 @@ async def test_restored_user_message_with_content_parts_is_replayed():
 
 async def test_restored_reasoning_stays_collapsed():
     tui = AgentTUI()
-    tui.open_session('stored-uuid', '', [AssistantMessage(content='answer', reasoning_content='long reasoning')])
+    tui.open_sessions([('stored-uuid', '', [AssistantMessage(content='answer', reasoning_content='long reasoning')])])
     async with tui.run_test(size=(40, 100)) as pilot:
         await pilot.pause()
         pane = tui.query_one(MessagePane)
@@ -127,7 +127,7 @@ async def test_restored_reasoning_stays_collapsed():
 async def test_restored_tool_message_is_replayed():
     tui = AgentTUI()
     history: Sequence[Message | SummaryMessage] = [ToolMessage(tool_call_id='1', content='tool output', tool_name='bash')]
-    tui.open_session('stored-uuid', '', history)
+    tui.open_sessions([('stored-uuid', '', history)])
     async with tui.run_test(size=(40, 100)) as pilot:
         await pilot.pause()
         pane = tui.query_one(MessagePane)
@@ -138,7 +138,7 @@ async def test_restored_tool_message_is_replayed():
 async def test_restored_summary_and_system_messages_are_replayed():
     tui = AgentTUI()
     history: Sequence[Message | SummaryMessage] = [SummaryMessage('summary text'), SystemMessage('system note')]
-    tui.open_session('stored-uuid', '', history)
+    tui.open_sessions([('stored-uuid', '', history)])
     async with tui.run_test(size=(40, 100)) as pilot:
         await pilot.pause()
         text = rendered_text(tui.query_one(MessagePane))
@@ -146,11 +146,11 @@ async def test_restored_summary_and_system_messages_are_replayed():
         assert 'system note' in text
 
 
-async def test_open_session_while_running_adds_a_tab():
+async def test_open_sessions_while_running_adds_tabs():
     tui = AgentTUI()
     async with tui.run_test(size=(40, 100)) as pilot:
         await pilot.pause()
-        tui.open_session('stored-uuid', 'stored', [UserMessage('late restore')])
+        tui.open_sessions([('stored-uuid', 'stored', [UserMessage('late restore')])])
         await pilot.pause()
         assert tui.active_session.session_id == 'stored-uuid'
         assert 'late restore' in rendered_text(tui.pane)
@@ -437,7 +437,7 @@ async def test_submitted_images_reach_the_handler(tmp_path, monkeypatch):
 
 async def test_restored_user_message_with_images_is_replayed():
     tui = AgentTUI()
-    tui.open_session('stored-uuid', '', [UserMessage('old picture', images=['data:image/png;base64,AAAA'])])
+    tui.open_sessions([('stored-uuid', '', [UserMessage('old picture', images=['data:image/png;base64,AAAA'])])])
     async with tui.run_test(size=(40, 100)) as pilot:
         await pilot.pause()
         text = rendered_text(tui.query_one(MessagePane))

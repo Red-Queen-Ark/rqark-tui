@@ -74,7 +74,7 @@ pip install rqark-tui --extra-index-url https://gitea.carhyme.top/api/packages/R
 rqark-tui
 ```
 
-在相同專案目錄再次執行，會接續上次對話。
+在相同專案目錄再次執行，會接返該目錄記住嘅所有對話（每條開一個 tab，最近用過嘅排最前，畫面顯示第一條）。
 
 畫面由上至下：header（agent / model / 標題）、session tab、訊息窗、popup（plan 或選單，需要時才出現）、輸入框。
 
@@ -94,6 +94,7 @@ rqark-tui
 - `/stop`、`/clear`、`/close` 只作用於目前 session
 - 移除 session 有兩種方法，效果一樣：點 tab 上面嘅 `×`、或輸入 `/close`；兩者都會先彈確認 dialog（`Enter`/`Esc` 取消、`Ctrl+E` 確認、或直接點按鈕）
 - 確認後會終止該 session 進行中嘅回應，再刪除它嘅對話紀錄（之後無法復原）；最後一條 session 唔可以關（要清空就用 `/clear`），因為畫面永遠要有一條 session
+- 關掉程式再喺同一目錄開返，之前嘅 session 會逐條還原成 tab；已經刪咗嘅則唔會再還原
 
 ### 快捷鍵
 

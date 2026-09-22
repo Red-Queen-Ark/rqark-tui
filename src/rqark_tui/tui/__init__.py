@@ -73,7 +73,7 @@ class AgentTUI(QuitHandler, App):
         self._keys_by_uuid: dict[str, str] = {}
         self._active_key: str | None = None
         self._session_count = 0
-        self._pending: Restored | None = None
+        self._pending: list[Restored] = []
         self._session_factory: SessionFactory | None = None
 
     def set_tools(self, tools: Sequence[BaseTool]) -> None:
@@ -85,12 +85,22 @@ class AgentTUI(QuitHandler, App):
         """Set how a new tab gets its bridge to the agent app."""
         self._session_factory = factory
 
-    def open_session(self, session_id: str, title: str, messages: Sequence[Message | SummaryMessage]) -> None:
-        """Make a stored session a tab: the first one before the app runs, a new one after."""
-        if self.is_running:
-            self.new_session(session_id=session_id, title=title, messages=messages)
+    def open_sessions(self, sessions: Sequence[Restored]) -> None:
+        """Make stored sessions tabs, in the order given; the first one is shown.
+
+        Before the app runs the tabs are opened on mount, so the layout is composed
+        once; afterwards they are appended to whatever is already on screen.
+        """
+        if not sessions:
             return
-        self._pending = (session_id, title, messages)
+        if self.is_running:
+            self._open_sessions(sessions)
+            return
+        self._pending.extend(sessions)
+
+    def _open_sessions(self, sessions: Sequence[Restored]) -> None:
+        restored = [self.new_session(session_id=session_id, title=title, messages=messages) for session_id, title, messages in sessions]
+        self.select_session(restored[0].key)
 
     def compose(self) -> ComposeResult:
         yield HeaderBar()
@@ -103,12 +113,11 @@ class AgentTUI(QuitHandler, App):
         header = self.query_one(HeaderBar)
         header.agent_name = self._agent_name
         header.model_name = self._model_name
-        pending, self._pending = self._pending, None
-        if pending is None:
-            self.new_session()
+        pending, self._pending = self._pending, []
+        if pending:
+            self._open_sessions(pending)
         else:
-            session_id, title, messages = pending
-            self.new_session(session_id=session_id, title=title, messages=messages)
+            self.new_session()
         self.query_one(ChatInput).focus()
 
     def set_agent_name(self, name: str) -> None:
