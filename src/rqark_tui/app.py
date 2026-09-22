@@ -40,7 +40,7 @@ async def connect_agent_event_to_tui(app: AgentApp, tui: AgentTUI):
 
     @app.on_error()
     async def error(ev: AgentPayload[Chunk]) -> None:
-        tui.append_error(str(ev.payload.content))
+        tui.append_error(str(ev.payload.content), agent_id=ev.agent_id, path=ev.path)
 
     @app.on_message()
     async def message(ev: AgentPayload[Message]) -> None:
@@ -48,7 +48,7 @@ async def connect_agent_event_to_tui(app: AgentApp, tui: AgentTUI):
 
     @app.on_plan()
     async def plan(ev: AgentPayload[list[PlanItem]]) -> None:
-        tui.show_plan(ev.payload)
+        tui.show_plan(ev.payload, ev.agent_id, ev.path)
 
     @app.on_provider_switched()
     async def provider_switched(ev: AgentPayload[ProviderSwitch]) -> None:
@@ -58,7 +58,6 @@ async def connect_agent_event_to_tui(app: AgentApp, tui: AgentTUI):
 async def _main() -> None:
     config_mgr = ConfigManager(str(Path.home() / '.rqark'))
     config_mgr.load()
-    session_id = config_mgr.dir_cache.get_session_id(config_mgr.cwd_hash)
     agent_mgr = AgentManager(AGENTS)
 
     storage = JSONLStorage(config_mgr.config_path / 'sessions' / 'tui')
@@ -69,16 +68,14 @@ async def _main() -> None:
     tui.set_agent_name(agent_mgr.agent.name)
     tui.set_model_name(app.provider_mgr.provider.name)
     tui.set_tools(agent_mgr.agent.tools)
+    tui.set_session_factory(lambda key, session_id: EventHandler(app, tui, agent_mgr, config_mgr, session_id, key))
 
-    handlers = EventHandler(app, tui, agent_mgr, config_mgr, session_id)
     await connect_agent_event_to_tui(app, tui)
-    tui.set_chat_handler(handlers.chat)
-    tui.set_command_handler(handlers.command)
 
-    session = await app.session_mgr.get(handlers.session_id) if handlers.session_id is not None else None
+    session_id = config_mgr.dir_cache.get_session_id(config_mgr.cwd_hash)
+    session = await app.session_mgr.get(session_id) if session_id else None
     if session is not None:
-        tui.set_session_title(session.title)
-        tui.restore_session(session.get_last_chunk())
+        tui.open_session(session.uuid, session.title, session.get_last_chunk())
     await tui.run()
 
 

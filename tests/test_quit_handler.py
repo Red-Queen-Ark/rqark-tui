@@ -81,6 +81,14 @@ def test_ctrl_e_is_bound_to_quit():
     assert actions == ['quit']
 
 
+def test_no_app_binding_swallows_the_input_keys():
+    """Ctrl+W belongs to the chat input (delete word) and Ctrl+E to the quit action."""
+    tui = AgentTUI()
+    assert 'ctrl+w' not in tui._bindings.key_to_bindings
+    quit_actions = [binding.action for binding in tui._bindings.key_to_bindings.get('ctrl+e', [])]
+    assert quit_actions == ['quit']
+
+
 async def test_single_escape_keeps_focus_in_the_input():
     tui = AgentTUI()
     async with tui.run_test(size=(40, 100)) as pilot:

@@ -168,7 +168,7 @@ async def test_slash_prefix_opens_the_command_popup():
         chat.text = '/'
         await pilot.pause()
         assert popup.display is True
-        assert [entry[1] for entry in popup._entries] == ['/clear', '/stop', '/models', '/agents']
+        assert [entry[1] for entry in popup._entries] == ['/clear', '/close', '/new', '/stop', '/models', '/agents']
         assert chat.popup_active is True
 
 
@@ -179,7 +179,7 @@ async def test_typing_a_prefix_filters_command_entries():
         popup = app.query_one(PopupSelector)
         await pilot.pause()
         await type_text(pilot, chat, '/c')
-        assert [entry[1] for entry in popup._entries] == ['/clear']
+        assert [entry[1] for entry in popup._entries] == ['/clear', '/close']
         assert popup.display is True
 
 
@@ -214,7 +214,7 @@ async def test_arrow_keys_move_the_command_highlight():
         await pilot.pause()
         await type_text(pilot, chat, '/')
         await pilot.press('down')
-        assert popup.selected_entry == ('/stop    Stop the current response', '/stop')
+        assert popup.selected_entry == ('/close   Close this session', '/close')
         await pilot.press('up')
         assert popup.selected_entry == ('/clear   Clear the current conversation', '/clear')
 

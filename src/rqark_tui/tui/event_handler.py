@@ -11,7 +11,12 @@ from rqark_tui.tui import AgentTUI
 
 
 class EventHandler:
-    """Bridges AgentApp events with TUI actions: chat submit and slash command dispatch."""
+    """Bridges AgentApp events with TUI actions for one session tab.
+
+    Every tab owns its own handler, so two sessions can stream at the same time
+    without sharing buffers; the stream listeners below only collect the events of
+    the session this handler was built for.
+    """
 
     def __init__(
         self,
@@ -20,12 +25,14 @@ class EventHandler:
         agent_mgr: AgentManager,
         config_mgr: ConfigManager,
         session_id: str | None,
+        key: str = '',
     ) -> None:
         self.app = app
         self.tui = tui
         self.agent_mgr = agent_mgr
         self.config_mgr = config_mgr
         self.session_id = session_id
+        self.key = key
         self._title_tasks: set[asyncio.Task] = set()
         self._stream_active = False
         self._stop_requested = False
@@ -38,18 +45,24 @@ class EventHandler:
     def _register_stream_tracking(self) -> None:
         @self.app.on_think()
         async def track_think(ev: AgentPayload[Chunk]) -> None:
-            if self._stream_active:
+            if self._owns(ev) and self._stream_active:
                 self._stream_reasoning += str(ev.payload.content)
 
         @self.app.on_content()
         async def track_content(ev: AgentPayload[Chunk]) -> None:
-            if self._stream_active:
+            if self._owns(ev) and self._stream_active:
                 self._stream_content += str(ev.payload.content)
+
+    def _owns(self, ev: AgentPayload[Chunk]) -> bool:
+        """True when an event is the main agent of this handler's session (never a subagent)."""
+        if ev.path:
+            return False
+        return self.key == '' or self.tui.session_key(ev.agent_id, ev.path) == self.key
 
     async def gen_title(self, session_uuid: str, first_message: str) -> None:
         titled = await self.app.chat_helper.gen_title(session_uuid, first_message)
         if titled is not None and titled.title:
-            self.tui.set_session_title(titled.title)
+            self.tui.set_session_title(self.key, titled.title)
 
     async def chat(self, text: str, images: list[str] | None = None) -> None:
         self._last_chat_text = text
@@ -62,6 +75,7 @@ class EventHandler:
             if self.session_id is None:
                 session = await self.app.session_mgr.create()
                 self.session_id = session.uuid
+                self.tui.bind_session(self.key, session.uuid)
             session = await self.app.chat(text, self.agent_mgr.agent, session_id=self.session_id, images=images)
             self.session_id = session.uuid
             self.config_mgr.dir_cache.set_session_id(self.config_mgr.cwd_hash, self.session_id)
@@ -93,21 +107,29 @@ class EventHandler:
         await self.app.session_mgr.save(session.uuid)
         self.config_mgr.dir_cache.set_session_id(self.config_mgr.cwd_hash, self.session_id)
 
+    async def close(self) -> None:
+        """Drop this session's stored transcript; the tab it belonged to is gone."""
+        if self.session_id is None:
+            return
+        await self.app.session_mgr.delete(self.session_id)
+        self.session_id = None
+
     async def command(self, command: str) -> str | None:
         name, _, arg = command.partition(' ')
         arg = arg.strip()
         match name:
             case '/clear':
-                self.tui.cancel_chat()
+                self.tui.cancel_chat(self.key)
                 if self.session_id is not None:
                     await self.app.session_mgr.delete(self.session_id)
                     self.session_id = None
-                self.tui.clear_messages()
-                self.tui.set_session_title('')
+                self._stream_content = ''
+                self._stream_reasoning = ''
+                self.tui.clear_session(self.key)
                 return 'Conversation cleared'
             case '/stop':
                 self._stop_requested = True
-                self.tui.cancel_chat()
+                self.tui.cancel_chat(self.key)
                 return 'Stopped'
             case '/models':
                 providers = self.app.provider_mgr.providers

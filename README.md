@@ -13,8 +13,10 @@
 - Thinking 區塊與 tool result 預設收合，可按 `▶` / `▼` 展開
 - `/stop` 中斷時保留已收到的部分內容
 - 滑鼠拖曳選取跨行文字；`Ctrl+C` 複製選取、`Ctrl+A` 全選、每則訊息右上 `[copy]` 按鈕整則複製（同時寫入 app 內部與系統剪貼簿）
-- Agent plan 以浮動 popup 顯示進度（` ` 待辦 / `>` 進行中 / `x` 完成 / `-` 取消）
-- 新 session 首則訊息送出後背景自動產生標題
+- 多個 session 同時運行：每條 session 有自己的訊息窗、worker 同 transcript，切 tab 即可望返另一條嘅即時進度，互不阻塞
+- Agent plan 以浮動 popup 顯示進度（` ` 待辦 / `>` 進行中 / `x` 完成 / `-` 取消），只顯示目前 session 嘅 plan
+- Subagent 輸出留在所屬 session 內，以 `Agent - <id>` 分塊顯示
+- 新 session 首則訊息送出後背景自動產生標題（標題會顯示在 tab 上）
 
 ## 安裝
 
@@ -74,6 +76,25 @@ rqark-tui
 
 在相同專案目錄再次執行，會接續上次對話。
 
+畫面由上至下：header（agent / model / 標題）、session tab、訊息窗、popup（plan 或選單，需要時才出現）、輸入框。
+
+```text
+<header>
+<session tab>   [Session 1] [Session 2] [+]
+<main>
+<popup>
+<footer>
+```
+
+### 多個 session
+
+- 點 `+`（或輸入 `/new`）開一條新 session；每條 session 各自有訊息紀錄、進行中的回應同輸入草稿
+- 切 tab 只換上面嘅訊息窗，背景 session 照樣繼續串流，切返去就見到完整內容
+- 正在回應嘅 session，tab 會變黃色；該 session 未完成前唔可以再送訊息（其他 session 不受影響）
+- `/stop`、`/clear`、`/close` 只作用於目前 session
+- 移除 session 有兩種方法，效果一樣：點 tab 上面嘅 `×`、或輸入 `/close`；兩者都會先彈確認 dialog（`Enter`/`Esc` 取消、`Ctrl+E` 確認、或直接點按鈕）
+- 確認後會終止該 session 進行中嘅回應，再刪除它嘅對話紀錄（之後無法復原）；最後一條 session 唔可以關（要清空就用 `/clear`），因為畫面永遠要有一條 session
+
 ### 快捷鍵
 
 | 按鍵 | 功能 |
@@ -87,7 +108,7 @@ rqark-tui
 | `Tab` / `↑` / `↓` | popup 中移動選項 |
 | `Esc` | 關閉 popup / 取消 |
 
-滑鼠操作：拖曳選取跨行文字、點 `[copy]` 複製整則訊息、點 `▶` / `▼` 展開或收合 thinking／tool result。
+滑鼠操作：拖曳選取跨行文字、點 `[copy]` 複製整則訊息、點 `▶` / `▼` 展開或收合 thinking／tool result、點 session tab 切換 session、點 `+` 開新 session、點 tab 上嘅 `×` 關閉該 session。
 
 > macOS 終端（如 Terminal.app）若吞掉修飾鍵，程式會直接讀取實體鍵盤狀態，確保 `Shift/Ctrl+Enter` 仍可換行。
 
@@ -97,7 +118,9 @@ rqark-tui
 
 | 指令 | 功能 |
 | --- | --- |
-| `/clear` | 清除目前對話（刪除 session 檔） |
+| `/clear` | 清除目前對話（刪除 session 檔，保留 tab） |
+| `/close` | 關閉目前 session（確認後刪除 session 檔並收起 tab） |
+| `/new` | 開一條新 session（同點 `+` 一樣） |
 | `/stop` | 停止目前回應（已收到的部分內容會存下） |
 | `/models` | 切換 model（picker 顯示目前可用 provider） |
 | `/agents` | 切換 agent |

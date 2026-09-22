@@ -33,6 +33,8 @@ class FakeChunk:
 @dataclass
 class FakePayload:
     payload: FakeChunk
+    agent_id: str = ''
+    path: tuple[str, ...] = ()
 
 
 @dataclass
@@ -94,17 +96,19 @@ class StubAgent:
 
 
 class FakeTUI:
-    def __init__(self, pick_result: Entry | None = None) -> None:
+    def __init__(self, pick_result: Entry | None = None, key: str = 'session-1') -> None:
         self.pick_result = pick_result
         self.picked: list[dict] = []
-        self.session_titles: list[str] = []
+        self.session_titles: list[tuple[str, str]] = []
         self.model_names: list[str] = []
         self.agent_names: list[str] = []
-        self.cancel_count = 0
-        self.clear_count = 0
+        self.cancelled: list[str | None] = []
+        self.cleared: list[str] = []
+        self.bound: list[tuple[str, str]] = []
+        self.key = key
 
-    def set_session_title(self, title: str) -> None:
-        self.session_titles.append(title)
+    def set_session_title(self, key: str, title: str) -> None:
+        self.session_titles.append((key, title))
 
     def set_model_name(self, name: str) -> None:
         self.model_names.append(name)
@@ -112,11 +116,17 @@ class FakeTUI:
     def set_agent_name(self, name: str) -> None:
         self.agent_names.append(name)
 
-    def cancel_chat(self) -> None:
-        self.cancel_count += 1
+    def cancel_chat(self, key: str | None = None) -> None:
+        self.cancelled.append(key)
 
-    def clear_messages(self) -> None:
-        self.clear_count += 1
+    def clear_session(self, key: str) -> None:
+        self.cleared.append(key)
+
+    def bind_session(self, key: str, session_id: str) -> None:
+        self.bound.append((key, session_id))
+
+    def session_key(self, agent_id: str = '', path: tuple[str, ...] = ()) -> str | None:
+        return self.key
 
     async def pick(self, entries, *, title: str = '', index: int = 0) -> Entry | None:
         self.picked.append({'entries': list(entries), 'title': title, 'index': index})
@@ -149,13 +159,13 @@ class FakeApp:
 
         return decorator
 
-    async def emit_think(self, text: str) -> None:
+    async def emit_think(self, text: str, path: tuple[str, ...] = ()) -> None:
         handler = cast('object', self.handlers['think'])
-        await cast('object', handler)(cast(AgentPayload[Chunk], FakePayload(FakeChunk(text))))
+        await cast('object', handler)(cast(AgentPayload[Chunk], FakePayload(FakeChunk(text), 'agent-a:session-1', path)))
 
-    async def emit_content(self, text: str) -> None:
+    async def emit_content(self, text: str, path: tuple[str, ...] = ()) -> None:
         handler = self.handlers['content']
-        await handler(cast(AgentPayload[Chunk], FakePayload(FakeChunk(text))))
+        await handler(cast(AgentPayload[Chunk], FakePayload(FakeChunk(text), 'agent-a:session-1', path)))
 
     async def chat(self, text: str, agent, session_id: str | None = None, images: list[str] | None = None) -> Session:
         self.chat_calls.append({'text': text, 'agent': agent, 'session_id': session_id, 'images': images})
@@ -178,9 +188,10 @@ def build(
     session_id: str | None = None,
     pick_result: Entry | None = None,
     agents: tuple[str, ...] = ('agent-a', 'agent-b'),
+    key: str = 'session-1',
 ) -> tuple[EventHandler, FakeApp, FakeTUI, FakeConfigManager, AgentManager]:
     app = FakeApp()
-    tui = FakeTUI(pick_result)
+    tui = FakeTUI(pick_result, key)
     agent_mgr = AgentManager(cast('object', [StubAgent(name) for name in agents]))
     config_mgr = FakeConfigManager()
     handler = EventHandler(
@@ -189,6 +200,7 @@ def build(
         agent_mgr,
         cast(ConfigManager, config_mgr),
         session_id,
+        key,
     )
     return handler, app, tui, config_mgr, agent_mgr
 
@@ -205,6 +217,34 @@ async def test_chat_creates_a_session_when_none_is_set():
     assert app.session_mgr.created == 1
     assert handler.session_id == app.session.uuid
     assert app.chat_calls[0]['session_id'] == app.session.uuid
+
+
+async def test_chat_binds_the_session_to_its_tab():
+    handler, app, tui, _config, _agents = build()
+    await handler.chat('hello')
+    assert tui.bound == [('session-1', app.session.uuid)]
+
+
+async def test_stream_events_of_another_session_are_ignored():
+    handler, app, tui, _config, _agents = build(key='session-1')
+    tui.key = 'session-2'
+    app.stream_content = 'other session'
+    app.stream_reasoning = 'other reasoning'
+    await handler.chat('hello')
+    assert handler._stream_content == ''
+    assert handler._stream_reasoning == ''
+
+
+async def test_subagent_events_are_not_part_of_the_session_stream():
+    handler, app, _tui, _config, _agents = build()
+
+    async def subagent_output() -> None:
+        await app.emit_content('subagent answer', path=('agent-a:session-1',))
+
+    app.during_chat = subagent_output
+    app.stream_content = 'main answer'
+    await handler.chat('hello')
+    assert handler._stream_content == 'main answer'
 
 
 async def test_chat_reuses_an_existing_session():
@@ -260,7 +300,7 @@ async def test_title_is_generated_once_for_an_untitled_session():
     await handler.chat('hello')
     await asyncio.gather(*handler._title_tasks)
     assert app.chat_helper.calls == [(app.session.uuid, 'hello')]
-    assert tui.session_titles == ['generated title']
+    assert tui.session_titles == [('session-1', 'generated title')]
 
 
 async def test_title_is_not_generated_for_a_titled_session():
@@ -286,7 +326,7 @@ async def test_gen_title_updates_the_header():
     handler, app, tui, _config, _agents = build()
     await handler.gen_title('uuid', 'first message')
     assert app.chat_helper.calls == [('uuid', 'first message')]
-    assert tui.session_titles == ['generated title']
+    assert tui.session_titles == [('session-1', 'generated title')]
 
 
 async def test_cancellation_without_a_stop_request_propagates():
@@ -317,7 +357,7 @@ async def test_stop_saves_the_partial_answer():
     app.stream_reasoning = 'partial reasoning'
     await stop_during_chat(handler, app)
     await handler.chat('hello')
-    assert tui.cancel_count == 1
+    assert tui.cancelled == ['session-1']
     assert [type(message) for message in session.history] == [UserMessage, AssistantMessage]
     assert session.history[0].content == 'hello'
     partial = session.history[1]
@@ -382,7 +422,7 @@ async def test_stop_marks_the_request_and_cancels_the_worker():
     handler, _app, tui, _config, _agents = build()
     assert await handler.command('/stop') == 'Stopped'
     assert handler._stop_requested is True
-    assert tui.cancel_count == 1
+    assert tui.cancelled == ['session-1']
 
 
 async def test_clear_deletes_the_session_and_resets_the_tui():
@@ -392,16 +432,15 @@ async def test_clear_deletes_the_session_and_resets_the_tui():
     assert await handler.command('/clear') == 'Conversation cleared'
     assert app.session_mgr.deleted == [session.uuid]
     assert handler.session_id is None
-    assert tui.clear_count == 1
-    assert tui.cancel_count == 1
-    assert tui.session_titles == ['']
+    assert tui.cleared == ['session-1']
+    assert tui.cancelled == ['session-1']
 
 
 async def test_clear_without_a_session_still_resets_the_tui():
     handler, app, tui, _config, _agents = build()
     assert await handler.command('/clear') == 'Conversation cleared'
     assert app.session_mgr.deleted == []
-    assert tui.clear_count == 1
+    assert tui.cleared == ['session-1']
 
 
 async def test_models_lists_every_provider_with_escaped_labels():

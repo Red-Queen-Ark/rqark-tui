@@ -46,9 +46,11 @@ class QuitHandler(_AppBase):
         # Textual's class-level binding merge only considers DOMNode
         # subclasses, so a plain mixin's BINDINGS are ignored there. Re-apply
         # them per key here, mirroring DOMNode._merge_bindings: later sources
-        # replace bindings for the same key.
+        # replace bindings for the same key. The mixin's own BINDINGS class
+        # attribute is named explicitly — ``self.BINDINGS`` would resolve to a
+        # subclass's list and silently drop the quit key.
         merged = self._bindings.copy()
-        for key, key_bindings in BindingsMap(self.BINDINGS).key_to_bindings.items():
+        for key, key_bindings in BindingsMap(QuitHandler.BINDINGS).key_to_bindings.items():
             merged.key_to_bindings[key] = key_bindings
         for key in ('ctrl+q', 'ctrl+c'):
             merged.key_to_bindings.pop(key, None)
