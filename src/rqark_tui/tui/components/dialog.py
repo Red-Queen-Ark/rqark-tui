@@ -55,6 +55,7 @@ class YesNoDialog(ModalScreen[bool]):
         color: #e0e0e0;
         text-align: center;
         padding: 0 2 1 2;
+        width: 100%;
     }
     #buttons {
         height: auto;

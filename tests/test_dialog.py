@@ -111,3 +111,17 @@ async def test_dialog_border_shows_the_title_and_hint():
         container = app.screen.query_one('#dialog')
         assert container.border_title == 'Quit?'
         assert 'Esc to cancel' in container.border_subtitle
+
+
+async def test_a_long_message_wraps_instead_of_being_cut_off():
+    message = 'Close this session and delete its whole conversation?'
+    app = DialogApp()
+    async with app.run_test(size=(40, 100)) as pilot:
+        await pilot.pause()
+        app.pop_screen()
+        app.push_screen(YesNoDialog(message, title='Close session?'))
+        await pilot.pause()
+        label = app.screen.query_one(Label)
+        assert label.size.height > 1
+        rendered = '\n'.join(strip.text for strip in app.screen._compositor.render_strips())
+        assert 'conversation?' in rendered
