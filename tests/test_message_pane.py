@@ -692,6 +692,76 @@ async def test_single_click_without_drag_clears_the_selection():
         assert pane._selection_anchor is None
 
 
+def border_offset(pane: MessagePane, x: int = 3, y: int = 0) -> tuple[int, int]:
+    """An offset inside the pane's top border row."""
+    return (x, y)
+
+
+async def test_a_click_inside_the_text_does_not_hold_the_mouse_capture():
+    async with PaneApp().run_test(size=(20, 40)) as pilot:
+        pane = pilot.app.query_one(MessagePane)
+        await pilot.pause()
+        pane.append_message('abcdefghij')
+        await pilot.mouse_down(MessagePane, offset=content_offset(pane, 2, 1))
+        assert pilot.app.mouse_captured is pane
+        await pilot.mouse_up(MessagePane, offset=content_offset(pane, 2, 1))
+        assert pilot.app.mouse_captured is None
+
+
+async def test_a_click_on_the_border_never_captures_the_mouse():
+    async with PaneApp().run_test(size=(20, 40)) as pilot:
+        pane = pilot.app.query_one(MessagePane)
+        await pilot.pause()
+        pane.append_message('abcdefghij')
+        await pilot.click(MessagePane, offset=border_offset(pane))
+        assert pilot.app.mouse_captured is None
+        assert pane._selection_anchor is None
+
+
+async def test_a_re_render_mid_drag_still_releases_the_mouse_capture():
+    async with PaneApp().run_test(size=(20, 40)) as pilot:
+        pane = pilot.app.query_one(MessagePane)
+        await pilot.pause()
+        pane.append_message('abcdefghij')
+        pane.append_message('klmnopqrst')
+        await pilot.mouse_down(MessagePane, offset=content_offset(pane, 2, 1))
+        # A streaming agent re-writes its block between the press and the release.
+        pane.append_agent_delta('more text arrives', agent_id='Angel Holiday:uuid')
+        pane._flush_now()
+        await pilot.mouse_up(MessagePane, offset=content_offset(pane, 4, 3))
+        assert pilot.app.mouse_captured is None
+        assert pane._selection_anchor is None
+
+
+async def test_a_drag_that_spans_a_re_render_keeps_its_selection():
+    async with PaneApp().run_test(size=(20, 40)) as pilot:
+        pane = pilot.app.query_one(MessagePane)
+        await pilot.pause()
+        pane.append_message('abcdefghij')
+        pane.append_message('klmnopqrst')
+        await pilot.mouse_down(MessagePane, offset=content_offset(pane, 2, 1))
+        pane.append_agent_delta('more text arrives', agent_id='Angel Holiday:uuid')
+        pane._flush_now()
+        await pilot._post_mouse_events([events.MouseMove], MessagePane, offset=content_offset(pane, 4, 3), button=1)
+        assert pane._has_selection is True
+        await pilot.mouse_up(MessagePane, offset=content_offset(pane, 4, 3))
+        assert pane._has_selection is True
+        assert pane._selection_start[0] == 1
+        assert pane._selection_end[0] == 3
+
+
+async def test_removing_the_pane_while_dragging_releases_the_mouse_capture():
+    async with PaneApp().run_test(size=(20, 40)) as pilot:
+        pane = pilot.app.query_one(MessagePane)
+        await pilot.pause()
+        pane.append_message('abcdefghij')
+        await pilot.mouse_down(MessagePane, offset=content_offset(pane, 2, 1))
+        assert pilot.app.mouse_captured is pane
+        await pane.remove()
+        await pilot.pause()
+        assert pilot.app.mouse_captured is None
+
+
 @pytest.mark.parametrize(
     ('value', 'expected'),
     [

@@ -7,8 +7,8 @@
 ## 功能特色
 
 - 串流式聊天：reasoning、Markdown 內容、tool call 與 tool result 即時顯示
-- 內建三個 agent：Angel Holiday（含完整工具集）、Diana、Wednesday，可在執行中切換
-- 每個專案目錄獨立 session：`~/.rqark/dir_cache.json` 記錄專案目錄 → session 對應，在同一專案重開即恢復上次對話
+- agent 由 `~/.rqark/agents/*.yml` 定義（人格、prompt、工具），首次執行會用內建三個預設（Angel Holiday、Diana、Wednesday）填入該目錄；可在執行中用 `/agents` 切換
+- 每個專案目錄獨立 session：`~/.rqark/dir_caches.json` 記錄專案目錄 → session 對應，在同一專案重開即恢復上次對話
 - 多 provider 設定（依 `priority` 排序），API 連續失敗 3 次自動 failover；`app.chat` 無限重試為設計行為，context 超長時自動摘要壓縮後續跑
 - Thinking 區塊與 tool result 預設收合，可按 `▶` / `▼` 展開
 - `/stop` 中斷時保留已收到的部分內容
@@ -45,11 +45,33 @@ pip install rqark-tui --extra-index-url https://gitea.carhyme.top/api/packages/R
 ```text
 ~/.rqark/
 ├── providers.yml      # provider 清單（不存在時自動建立空白範本）
-├── dir_cache.json    # 專案目錄（cwd hash）→ session 對應
-└── sessions/tui/     # 每 session 一個 .jsonl
+├── agents/            # 每個 agent 一個 .yml（不存在時用內建預設填入）
+├── dir_caches.json    # 專案目錄（cwd hash）→ session 對應
+└── sessions/tui/      # 每 session 一個 .jsonl
 ```
 
-`dir_cache.json` 以啟動時的所在目錄（cwd hash）為 key，故每個專案各自保留 session。
+`dir_caches.json` 以啟動時的所在目錄（cwd hash）為 key，故每個專案各自保留 session。
+
+`agents/*.yml` 範例（`name` 用大駝峰類名，tool 名稱見 `rqark-core` 的 `TOOLS` 表；`params` 視 tool 而定）：
+
+```yaml
+name: Diana
+description: ''
+prompts:
+- name: RolePrompt
+  params:
+    agent_name: Diana
+    user_name: Sir
+tools:
+- name: Gitea
+  params:
+    username: diana
+    token: '...'
+    base_url: https://gitea.example
+- name: WebSearch
+```
+
+改完 `agents/*.yml` 要重開程式才生效；`/agents` 只會在已載入的 agent 之間切換。因為 YAML 直接存到本機，內含 token 的 agent 檔建議 `chmod 600`（`~/.rqark` 本身不在任何 repo 內）。
 
 `providers.yml` 範例：
 

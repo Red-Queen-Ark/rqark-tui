@@ -3,7 +3,6 @@ from pathlib import Path
 
 from rqark_app.agent.manager import AgentManager
 from rqark_app.app import AgentApp, Message
-from rqark_app.config.default import AGENTS
 from rqark_app.config.manager import ConfigManager
 from rqark_app.session.manager import SessionManager
 from rqark_app.session.storage import JSONLStorage
@@ -30,6 +29,15 @@ async def restored_sessions(config_mgr: ConfigManager, session_mgr: SessionManag
             continue
         restored.append((session.uuid, session.title, session.get_last_chunk()))
     return restored
+
+
+def load_agent_manager(config_mgr: ConfigManager) -> AgentManager:
+    """Agents the user configured in ``~/.rqark/agents/*.yml``.
+
+    The built-in presets in ``rqark_app.config.default`` only seed that directory on
+    first run; once it holds files, the files win.
+    """
+    return AgentManager(config_mgr.agents)
 
 
 async def connect_agent_event_to_tui(app: AgentApp, tui: AgentTUI):
@@ -75,7 +83,7 @@ async def connect_agent_event_to_tui(app: AgentApp, tui: AgentTUI):
 async def _main() -> None:
     config_mgr = ConfigManager(str(Path.home() / '.rqark'))
     config_mgr.load()
-    agent_mgr = AgentManager(AGENTS)
+    agent_mgr = load_agent_manager(config_mgr)
 
     storage = JSONLStorage(config_mgr.config_path / 'sessions' / 'tui')
     app = AgentApp(config_mgr.providers, storage)

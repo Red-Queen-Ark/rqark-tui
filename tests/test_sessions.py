@@ -840,3 +840,54 @@ async def test_a_message_merely_starting_with_new_is_not_a_new_session():
         await pilot.pause(0.1)
         assert tab_labels(tui) == ['Session 1', '+']
         assert bridges.by_key['session-1'].chats == ['a /newer look']
+
+
+def content_offset(pane: MessagePane, x: int, y: int) -> tuple[int, int]:
+    base = pane.content_region.offset - pane.region.offset
+    return (base.x + x, base.y + y)
+
+
+async def test_tabs_still_take_clicks_after_clicking_a_pane_that_is_streaming():
+    """A click in a live pane must not keep the mouse: the tab strip needs it back."""
+    tui = AgentTUI()
+    bridges = Bridges(delay=5.0)
+    tui.set_session_factory(bridges)
+    async with tui.run_test(size=(40, 100)) as pilot:
+        await pilot.pause()
+        submit(tui, 'slow one')
+        await pilot.pause(0.1)
+        await pilot.click('#new-session')
+        await pilot.pause()
+        await pilot.click('#tab-session-1')
+        await pilot.pause()
+        pane = pane_of(tui, 'session-1')
+        tui.append_agent_delta('streaming along', key='session-1')
+        await pilot.mouse_down('#pane-session-1', offset=content_offset(pane, 2, 1))
+        # The stream re-renders the block while the button is still down.
+        tui.append_agent_delta(' and on', key='session-1')
+        pane._flush_now()
+        await pilot.mouse_up('#pane-session-1', offset=content_offset(pane, 2, 1))
+        await pilot.pause()
+        assert tui.app.mouse_captured is None
+        await pilot.click('#tab-session-2')
+        await pilot.pause()
+        assert tui.active_key == 'session-2'
+        tui.cancel_chat('session-1')
+
+
+async def test_tabs_still_take_clicks_after_clicking_a_panes_border():
+    tui = AgentTUI()
+    async with tui.run_test(size=(40, 100)) as pilot:
+        await pilot.pause()
+        await pilot.click('#new-session')
+        await pilot.pause()
+        await pilot.click('#tab-session-1')
+        await pilot.pause()
+        tui.append_system('something to look at', key='session-1')
+        # (3, 0) is on the pane's top border, not on its text.
+        await pilot.click('#pane-session-1', offset=(3, 0))
+        await pilot.pause()
+        assert tui.app.mouse_captured is None
+        await pilot.click('#tab-session-2')
+        await pilot.pause()
+        assert tui.active_key == 'session-2'

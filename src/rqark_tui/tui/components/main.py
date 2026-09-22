@@ -173,6 +173,7 @@ class MessagePane(RichLog):
         self._selection_start: tuple[int, int] | None = None
         self._selection_end: tuple[int, int] | None = None
         self._selection_anchor: tuple[int, int] | None = None
+        self._mouse_captured = False
         self._needs_initial_rebuild = True
         self._tool_keys: dict[str, str] = {}
         self._dirty_index: int | None = None
@@ -189,6 +190,9 @@ class MessagePane(RichLog):
             self._flush_timer.stop()
             self._flush_timer = None
         self._dirty_index = None
+        if self._mouse_captured:
+            self._mouse_captured = False
+            self.release_mouse()
 
     def on_resize(self, event) -> None:
         super().on_resize(event)
@@ -508,9 +512,13 @@ class MessagePane(RichLog):
         return self._selection_start is not None and self._selection_end is not None
 
     def _clear_selection(self) -> None:
+        """Drop the highlight.
+
+        The drag anchor is left alone: re-renders (a streaming agent re-writes its
+        block on every flush) must not end a drag the user is still holding.
+        """
         self._selection_start = None
         self._selection_end = None
-        self._selection_anchor = None
         self.refresh()
 
     def _virtual_offset(self, offset: Offset) -> tuple[int, int]:
@@ -610,13 +618,18 @@ class MessagePane(RichLog):
 
     async def _on_mouse_down(self, event: events.MouseDown) -> None:
         if event.button == 1:  # left button
-            self.capture_mouse()
             offset = event.get_content_offset(self)
             if offset is not None:
+                # Only a click inside the text starts a drag, and only then is the
+                # mouse captured — so pressing the border, the padding or the
+                # scrollbar cannot leave the capture behind.
+                self._mouse_captured = True
+                self.capture_mouse()
                 self._selection_anchor = self._selection_start = self._selection_end = self._virtual_offset(offset)
                 self.refresh()
             else:
-                # Click on border/padding: drop any existing selection.
+                # Click on border/padding/scrollbar: drop any existing selection.
+                self._selection_anchor = None
                 self._clear_selection()
         await super()._on_mouse_down(event)
 
@@ -631,8 +644,13 @@ class MessagePane(RichLog):
             self.refresh()
 
     async def _on_mouse_up(self, event: events.MouseUp) -> None:
-        if self._selection_anchor is not None:
+        # The capture is always let go here: while it is held every mouse event of
+        # the app is routed to this pane, so the tab strip, the popup and the input
+        # would silently stop answering clicks.
+        if self._mouse_captured:
+            self._mouse_captured = False
             self.release_mouse()
+        if self._selection_anchor is not None:
             self._selection_anchor = None
             if not self._has_selection or self._selection_start == self._selection_end:
                 self._clear_selection()
