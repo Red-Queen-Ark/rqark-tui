@@ -329,6 +329,44 @@ async def test_subagent_stream_does_not_merge_into_the_main_agent_block():
         assert pane._blocks[4].sections[-1].text == 'resumed'
 
 
+async def test_interleaved_subagent_streams_keep_one_block_each():
+    other_sub = '1a2b3c4d-3e4f-5a6b-7c8d-9e0f1a2b3c4d'
+    async with PaneApp().run_test(size=(40, 120)) as pilot:
+        pane = pilot.app.query_one(MessagePane)
+        await pilot.pause()
+        pane.append_agent_delta('main ', agent_id=MAIN_AGENT)
+        pane.append_tool_call('subagent', '{}', agent_id=MAIN_AGENT)
+        for index in range(4):
+            pane.append_agent_delta(f'a{index} ', agent_id=SUB_AGENT, path=(MAIN_AGENT,))
+            pane.append_agent_delta(f'b{index} ', agent_id=other_sub, path=(MAIN_AGENT,))
+        pane.append_tool_call('web_search', '{}', agent_id=SUB_AGENT, path=(MAIN_AGENT,))
+        pane.append_agent_delta('c', agent_id=SUB_AGENT, path=(MAIN_AGENT,))
+        pane.append_agent_delta('d', agent_id=other_sub, path=(MAIN_AGENT,))
+        pane.close_agent_message(SUB_AGENT, (MAIN_AGENT,))
+        pane.close_agent_message(other_sub, (MAIN_AGENT,))
+        assert [(block.kind, block.agent) for block in pane._blocks] == [
+            ('agent', 'angel-holiday'),
+            ('tools', 'angel-holiday'),
+            ('agent', '0f8a1c2d'),
+            ('agent', '1a2b3c4d'),
+            ('tools', '0f8a1c2d'),
+            ('agent', '0f8a1c2d'),
+        ]
+        assert pane._blocks[2].sections[-1].text == 'a0 a1 a2 a3 '
+        assert pane._blocks[3].sections[-1].text == 'b0 b1 b2 b3 d'
+        assert pane._blocks[5].sections[-1].text == 'c'
+        assert len(pane._message_spans) == len(pane._blocks)
+        headers = [line.text for line in pane.lines if line.text.startswith('Agent')]
+        assert [header.split()[2] for header in headers] == [
+            'angel-holiday',
+            'angel-holiday',
+            '0f8a1c2d',
+            '1a2b3c4d',
+            '0f8a1c2d',
+            '0f8a1c2d',
+        ]
+
+
 async def test_tool_display_falls_back_to_raw_arguments_on_bad_json():
     async with PaneApp().run_test(size=(40, 100)) as pilot:
         pane = pilot.app.query_one(MessagePane)

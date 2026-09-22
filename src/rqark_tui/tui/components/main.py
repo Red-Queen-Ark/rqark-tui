@@ -255,7 +255,7 @@ class MessagePane(RichLog):
             block = self._blocks[-1]
             idx = len(self._blocks) - 1
         else:
-            self._close_last()
+            self._close_agent(agent)
             self._new_block('tools', at, [], agent)
             block = self._blocks[-1]
             idx = len(self._blocks) - 1
@@ -277,6 +277,7 @@ class MessagePane(RichLog):
             block.open = True
             idx = len(self._blocks) - 1
         else:
+            self._close_agent(agent)
             self._new_block('tools', at, [], agent)
             block = self._blocks[-1]
             idx = len(self._blocks) - 1
@@ -312,21 +313,22 @@ class MessagePane(RichLog):
             self._blocks[-1].open = False
 
     def _close_agent(self, agent: str) -> None:
-        if not self._blocks:
-            return
-        block = self._blocks[-1]
-        if block.open and block.kind == 'agent' and block.agent == agent:
-            block.open = False
+        """Close ``agent``'s open text block, wherever it sits in the log."""
+        for block in reversed(self._blocks):
+            if block.open and block.kind == 'agent' and block.agent == agent:
+                block.open = False
+                return
 
     def _last_agent(self, agent: str) -> tuple[int, _Block] | None:
-        if not self._blocks:
-            return None
-        block = self._blocks[-1]
-        if not block.open or block.kind != 'agent' or block.agent != agent:
-            return None
-        if any(s.mode == 'tool' for s in block.sections):
-            return None
-        return len(self._blocks) - 1, block
+        """The newest open text block of ``agent``; concurrent agents each keep their own."""
+        for index in range(len(self._blocks) - 1, -1, -1):
+            block = self._blocks[index]
+            if block.kind != 'agent' or block.agent != agent:
+                continue
+            if not block.open or any(s.mode == 'tool' for s in block.sections):
+                return None
+            return index, block
+        return None
 
     def _open_agent(
         self, at: datetime | None, agent_id: str = '', path: tuple[str, ...] = ()
@@ -336,7 +338,6 @@ class MessagePane(RichLog):
         if last is not None:
             return last
         self._flush_now()
-        self._close_last()
         block = self._new_block('agent', at, [], agent)
         return len(self._blocks) - 1, block
 
@@ -355,12 +356,13 @@ class MessagePane(RichLog):
         if not self._size_known:
             return
         self._dirty_index = None
-        block = self._blocks[idx]
-        del self.lines[block.start:]
+        del self.lines[self._blocks[idx].start:]
         self._line_cache.clear()
         del self._message_spans[idx:]
         del self._message_texts[idx:]
-        self._emit_block(idx)
+        for index in range(idx, len(self._blocks)):
+            self._blocks[index].start = len(self.lines)
+            self._emit_block(index)
         self._clear_selection()
 
     def _rebuild(self) -> None:
