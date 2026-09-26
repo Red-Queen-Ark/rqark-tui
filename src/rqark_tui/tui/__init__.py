@@ -68,6 +68,7 @@ class AgentTUI(QuitHandler, App):
         super().__init__()
         self._agent_name = ''
         self._model_name = ''
+        self._cloud = False
         self._tool_keys: dict[str, str] = {}
         self._sessions: dict[str, ChatSession] = {}
         self._keys_by_uuid: dict[str, str] = {}
@@ -113,6 +114,7 @@ class AgentTUI(QuitHandler, App):
         header = self.query_one(HeaderBar)
         header.agent_name = self._agent_name
         header.model_name = self._model_name
+        header.cloud = self._cloud
         pending, self._pending = self._pending, []
         if pending:
             self._open_sessions(pending)
@@ -129,6 +131,11 @@ class AgentTUI(QuitHandler, App):
         self._model_name = name
         if self.is_running:
             self.query_one(HeaderBar).model_name = name
+
+    def set_cloud_mode(self, cloud: bool) -> None:
+        self._cloud = cloud
+        if self.is_running:
+            self.query_one(HeaderBar).cloud = cloud
 
     # --- sessions -----------------------------------------------------------
 
@@ -202,7 +209,6 @@ class AgentTUI(QuitHandler, App):
             self._active_key = key
             session.pane.display = True
             self.query_one(SessionTabs).activate(key)
-            self.query_one(HeaderBar).session_title = session.title
             self._show_plan(session)
             chat.text = session.draft
         chat.focus()
@@ -298,14 +304,12 @@ class AgentTUI(QuitHandler, App):
         self.close_session(event.key)
 
     def set_session_title(self, key: str, title: str) -> None:
-        """Name a session: its tab label and, when it is on screen, the header."""
+        """Name a session: its tab label."""
         session = self._sessions.get(key)
         if session is None or session.title == title:
             return
         session.title = title
         self.query_one(SessionTabs).set_label(key, session.label)
-        if key == self._active_key:
-            self.query_one(HeaderBar).session_title = title
 
     def clear_session(self, key: str) -> None:
         """Empty a session: its transcript, its title, its plan and its stored id."""
@@ -320,7 +324,6 @@ class AgentTUI(QuitHandler, App):
         session.plan = []
         self.query_one(SessionTabs).set_label(key, session.label)
         if key == self._active_key:
-            self.query_one(HeaderBar).session_title = ''
             self._show_plan(session)
 
     def on_session_tabs_selected(self, event: SessionTabs.Selected) -> None:

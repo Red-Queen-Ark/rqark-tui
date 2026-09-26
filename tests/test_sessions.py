@@ -8,7 +8,6 @@ from textual.widgets import Label
 from rqark_tui.tui import AgentTUI
 from rqark_tui.tui.components.dialog import YesNoDialog
 from rqark_tui.tui.components.footer import ChatInput
-from rqark_tui.tui.components.header import HeaderBar
 from rqark_tui.tui.components.main import MessagePane
 from rqark_tui.tui.components.popup import PopupSelector
 from rqark_tui.tui.components.session import CLOSE_MARK, SessionTabs
@@ -102,7 +101,6 @@ async def test_the_first_session_tab_is_ready_on_mount():
         assert tab_labels(tui) == ['Session 1', '+']
         assert tui.active_key == 'session-1'
         assert pane_of(tui, 'session-1').display is True
-        assert tui.query_one(HeaderBar).session_title == ''
 
 
 async def test_the_plus_tab_adds_a_session_and_shows_it():
@@ -238,19 +236,16 @@ async def test_commands_go_to_the_session_that_typed_them():
         assert 'Stopped' in sections_of(pane_of(tui, 'session-2'))
 
 
-async def test_session_titles_land_on_the_tab_and_the_header():
+async def test_session_titles_land_on_the_tab():
     tui = AgentTUI()
     async with tui.run_test(size=(40, 100)) as pilot:
         await pilot.pause()
         tui.set_session_title('session-1', 'renamed')
         assert tab_labels(tui) == ['renamed', '+']
-        assert tui.query_one(HeaderBar).session_title == 'renamed'
         await pilot.click('#new-session')
         await pilot.pause()
-        assert tui.query_one(HeaderBar).session_title == ''
         tui.set_session_title('session-1', 'background')
         assert tab_labels(tui) == ['background', 'Session 2', '+']
-        assert tui.query_one(HeaderBar).session_title == ''
         tui.set_session_title('missing', 'ignored')
         assert tab_labels(tui) == ['background', 'Session 2', '+']
 
@@ -316,7 +311,6 @@ async def test_clearing_a_session_resets_its_pane_title_and_plan():
         tui.clear_session('session-1')
         assert pane_of(tui, 'session-1')._blocks == []
         assert tab_labels(tui) == ['Session 1', '+']
-        assert tui.query_one(HeaderBar).session_title == ''
         assert tui.query_one(PopupSelector).display is False
         assert tui.session_key('Angel Holiday:uuid-1') is None
         assert tui._sessions['session-1'].plan == []
@@ -356,7 +350,6 @@ async def test_a_restored_session_is_the_first_tab():
         await pilot.pause()
         assert tab_labels(tui) == ['stored title', '+']
         assert 'old question' in rendered(pane_of(tui, 'session-1'))
-        assert tui.query_one(HeaderBar).session_title == 'stored title'
         assert tui.session_key('Angel Holiday:uuid-1') == 'session-1'
 
 
@@ -407,7 +400,6 @@ async def test_the_first_stored_session_is_the_one_on_screen():
         assert pane_of(tui, 'session-1').display is True
         assert pane_of(tui, 'session-2').display is False
         assert tabs_of(tui).active == 'tab-session-1'
-        assert tui.query_one(HeaderBar).session_title == 'first'
         assert tui.query_one(ChatInput).has_focus is True
 
 

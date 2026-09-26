@@ -4,6 +4,7 @@ from collections.abc import Sequence
 from rqark_app.types.session import SummaryMessage, message_from_dict
 from rqark_core.types.chat import AssistantMessage, Message, SystemMessage, ToolMessage, UserMessage
 from rqark_core.types.tool import PlanItem
+from textual.widgets import Static
 
 from rqark_tui.tui import AgentTUI
 from rqark_tui.tui.components.footer import ChatInput
@@ -58,16 +59,34 @@ def rendered_text(pane: MessagePane) -> str:
     return '\n'.join(line.text for line in pane.lines)
 
 
-async def test_header_shows_agent_model_and_title_updates():
+async def test_header_shows_agent_and_model_updates():
     tui = AgentTUI()
     async with tui.run_test(size=(40, 100)) as pilot:
         await pilot.pause()
         header = tui.query_one(HeaderBar)
         tui.set_agent_name('coder')
         tui.set_model_name('deepseek')
-        tui.set_session_title(tui.active_key, 'my session')
-        assert (header.agent_name, header.model_name, header.session_title) == ('coder', 'deepseek', 'my session')
-        assert 'coder' in str(header.render())
+        assert (header.agent_name, header.model_name) == ('coder', 'deepseek')
+        assert 'coder' in str(header.query_one('.header-line', Static).render())
+
+
+async def test_header_shows_the_cloud_badge_in_cloud_mode():
+    tui = AgentTUI()
+    tui.set_cloud_mode(True)
+    async with tui.run_test(size=(40, 100)) as pilot:
+        await pilot.pause()
+        header = tui.query_one(HeaderBar)
+        assert header.cloud is True
+        assert header.query_one('.header-cloud', Static).display
+
+
+async def test_header_hides_the_cloud_badge_outside_cloud_mode():
+    tui = AgentTUI()
+    async with tui.run_test(size=(40, 100)) as pilot:
+        await pilot.pause()
+        header = tui.query_one(HeaderBar)
+        assert header.cloud is False
+        assert not header.query_one('.header-cloud', Static).display
 
 
 async def test_setters_before_running_store_values_without_querying():
@@ -79,7 +98,7 @@ async def test_setters_before_running_store_values_without_querying():
     async with tui.run_test(size=(40, 100)) as pilot:
         await pilot.pause()
         header = tui.query_one(HeaderBar)
-        assert (header.agent_name, header.model_name, header.session_title) == ('coder', 'deepseek', 'title')
+        assert (header.agent_name, header.model_name) == ('coder', 'deepseek')
         assert tui.active_session.session_id == 'stored-uuid'
 
 

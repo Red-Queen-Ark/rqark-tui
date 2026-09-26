@@ -82,7 +82,7 @@ async def connect_agent_event_to_tui(app: AgentApp, tui: AgentTUI):
 
 async def _main() -> None:
     config_mgr = ConfigManager(str(Path.home() / '.rqark'))
-    config_mgr.load()
+    await config_mgr.load()
     agent_mgr = load_agent_manager(config_mgr)
 
     storage = JSONLStorage(config_mgr.config_path / 'sessions' / 'tui')
@@ -90,6 +90,7 @@ async def _main() -> None:
     await app.session_mgr.load()
 
     tui = AgentTUI()
+    tui.set_cloud_mode(config_mgr.cloud_client is not None)
     tui.set_agent_name(agent_mgr.agent.name)
     tui.set_model_name(app.provider_mgr.provider.name)
     tui.set_tools(agent_mgr.agent.tools)
