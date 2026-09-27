@@ -5,7 +5,8 @@ from rqark_app.agent.manager import AgentManager
 from rqark_app.app import AgentApp, Message
 from rqark_app.config.manager import ConfigManager
 from rqark_app.session.manager import SessionManager
-from rqark_app.session.storage import JSONLStorage
+from rqark_app.session.storage import JSONLStorage, CloudStorage
+
 from rqark_app.types.event import ProviderSwitch
 from rqark_core.types.chat import Chunk, ToolMessage
 from rqark_core.types.event import AgentPayload
@@ -85,7 +86,11 @@ async def _main() -> None:
     await config_mgr.load()
     agent_mgr = load_agent_manager(config_mgr)
 
-    storage = JSONLStorage(config_mgr.config_path / 'sessions' / 'tui')
+    if config_mgr.cloud_client is not None:
+        storage = CloudStorage(config_mgr.cloud_client)
+    else:
+        storage = JSONLStorage(config_mgr.config_path / 'sessions' / 'tui')
+
     app = AgentApp(config_mgr.providers, storage)
     await app.session_mgr.load()
 
