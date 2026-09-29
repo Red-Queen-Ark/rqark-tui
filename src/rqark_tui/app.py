@@ -5,8 +5,7 @@ from rqark_app.agent.manager import AgentManager
 from rqark_app.app import AgentApp, Message
 from rqark_app.config.manager import ConfigManager
 from rqark_app.session.manager import SessionManager
-from rqark_app.session.storage import JSONLStorage, CloudStorage
-
+from rqark_app.session.storage import CloudStorage, JSONLStorage
 from rqark_app.types.event import ProviderSwitch
 from rqark_core.types.chat import Chunk, ToolMessage
 from rqark_core.types.event import AgentPayload
@@ -74,6 +73,8 @@ async def connect_agent_event_to_tui(app: AgentApp, tui: AgentTUI):
 
     @app.on_plan()
     async def plan(ev: AgentPayload[list[PlanItem]]) -> None:
+        if ev.path or ':' not in ev.agent_id:
+            return
         tui.show_plan(ev.payload, ev.agent_id, ev.path)
 
     @app.on_provider_switched()
