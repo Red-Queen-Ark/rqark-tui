@@ -88,7 +88,7 @@ async def _main() -> None:
     agent_mgr = load_agent_manager(config_mgr)
 
     if config_mgr.cloud_client is not None:
-        storage = CloudStorage(config_mgr.cloud_client)
+        storage = CloudStorage(config_mgr.cloud_client, source='TUI')
     else:
         storage = JSONLStorage(config_mgr.config_path / 'sessions' / 'tui')
 
