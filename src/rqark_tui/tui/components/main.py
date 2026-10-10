@@ -150,6 +150,7 @@ class MessagePane(RichLog):
         height: 1fr;
         border: round #303030;
         padding: 1 2;
+        overflow-x: hidden;
         background: #141414;
     }
     MessagePane:focus {
@@ -174,7 +175,7 @@ class MessagePane(RichLog):
         self._selection_end: tuple[int, int] | None = None
         self._selection_anchor: tuple[int, int] | None = None
         self._mouse_captured = False
-        self._needs_initial_rebuild = True
+        self._wrap_width = 0
         self._tool_keys: dict[str, str] = {}
         self._dirty_index: int | None = None
         self._flush_timer: Timer | None = None
@@ -196,10 +197,10 @@ class MessagePane(RichLog):
 
     def on_resize(self, event) -> None:
         super().on_resize(event)
-        if self._needs_initial_rebuild and self._size_known:
-            self._needs_initial_rebuild = False
-            if self._blocks:
-                self._rebuild()
+        if not self._size_known or not self._blocks:
+            return
+        if self.scrollable_content_region.width != self._wrap_width:
+            self._rebuild()
 
     # --- message appending -------------------------------------------------
 
@@ -362,6 +363,7 @@ class MessagePane(RichLog):
         self._dirty_index = None
         del self.lines[self._blocks[idx].start:]
         self._line_cache.clear()
+        self._widest_line_width = max((line.cell_length for line in self.lines), default=0)
         del self._message_spans[idx:]
         del self._message_texts[idx:]
         for index in range(idx, len(self._blocks)):
@@ -373,6 +375,7 @@ class MessagePane(RichLog):
         self._dirty_index = None
         del self.lines[:]
         self._line_cache.clear()
+        self._widest_line_width = 0
         self._message_spans.clear()
         self._message_texts.clear()
         for idx in range(len(self._blocks)):
@@ -384,7 +387,8 @@ class MessagePane(RichLog):
     def _emit_block(self, idx: int) -> None:
         block = self._blocks[idx]
         start = len(self.lines)
-        width = max(self.scrollable_content_region.width, 40)
+        width = max(self.scrollable_content_region.width, 1)
+        self._wrap_width = width
         self.write(self._header_row(block, idx), width=width, scroll_end=False)
         for si, section in enumerate(block.sections):
             rows: list[object] = []
@@ -426,6 +430,9 @@ class MessagePane(RichLog):
         head.append(' ' * self._pad_to(cell_len(label) + 1 + cell_len(dt) + len(' [copy]')))
         head.append(dt, Style(dim=True, color='#808080'))
         head.append(' [copy]', Style(color=_ACCENT, meta={'@click': f'copy_message({idx})'}))
+        width = max(self.scrollable_content_region.width, 1)
+        if head.cell_len > width:
+            head.right_crop(len(head.plain) - len(_crop_plain(head.plain, 0, width)))
         return head
 
     @staticmethod
