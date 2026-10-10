@@ -10,6 +10,7 @@ from rich.style import Style
 from rich.text import Text
 from textual import events
 from textual.geometry import Offset
+from textual.message import Message
 from textual.strip import Strip
 from textual.timer import Timer
 from textual.widgets import RichLog
@@ -30,6 +31,9 @@ _LABEL_COLORS = {
 }
 
 _ACCENT = '#4FC1FF'
+
+#: Colour of the ``[revert]`` button on user messages.
+_REVERT = '#FFA500'
 
 #: Characters of a subagent id kept in the header label.
 _AGENT_ID_PREFIX = 8
@@ -76,6 +80,7 @@ class _Block:
     sections: list[_Section] = field(default_factory=list)
     open: bool = True
     start: int = 0
+    message_id: str = ''
 
 
 def _crop_plain(text: str, start_cell: int, end_cell: int) -> str:
@@ -133,10 +138,12 @@ class MessagePane(RichLog):
 
     Each message gets a header row (``User`` / ``Agent <name>`` / ``System``)
     with the timestamp and a ``[copy]`` button right-aligned, followed by the
-    body. Agent blocks are labelled with the emitting agent (the agent name for
-    the main agent, a short id for a subagent) so both are told apart.
-    Reasoning and tool results render as collapsible accordions (expanded by
-    default). Mouse selection / Ctrl+C / Ctrl+A copy behaviour is preserved.
+    body. User messages also carry a ``[revert]`` button just left of ``[copy]``
+    (once more than one user turn exists), which asks the app to trim the session
+    back to that message. Agent blocks are labelled with the emitting agent (the
+    agent name for the main agent, a short id for a subagent) so both are told
+    apart. Reasoning and tool results render as collapsible accordions (expanded
+    by default). Mouse selection / Ctrl+C / Ctrl+A copy behaviour is preserved.
 
     Streaming deltas only mutate the block model; the widget re-renders at most
     once per ``FLUSH_INTERVAL_SECONDS`` (see :meth:`_mark_dirty`), so a long
@@ -158,6 +165,18 @@ class MessagePane(RichLog):
         border: round #303030;
     }
     """
+
+    class RevertRequested(Message):
+        """Posted when a message's ``[revert]`` button is clicked."""
+
+        def __init__(self, pane: 'MessagePane', message_id: str) -> None:
+            super().__init__()
+            self.pane = pane
+            self.message_id = message_id
+
+        @property
+        def control(self) -> 'MessagePane':
+            return self.pane
 
     def __init__(self, **kwargs) -> None:
         # `wrap=True` + a small `min_width` so long messages wrap inside the
@@ -212,7 +231,7 @@ class MessagePane(RichLog):
             at = at.astimezone()
         return at.strftime('%Y-%m-%d %H:%M:%S')
 
-    def append_message(self, text: str, at: datetime | None = None, images: Sequence[str] | None = None) -> None:
+    def append_message(self, text: str, at: datetime | None = None, images: Sequence[str] | None = None, message_id: str = '') -> None:
         self._flush_now()
         self._close_last()
         sections: list[tuple[str, str, str]] = []
@@ -220,8 +239,20 @@ class MessagePane(RichLog):
             sections.append(('body', '', text))
         for index in range(len(images) if images is not None else 0):
             sections.append(('image', '', f'[image {index + 1}]'))
-        self._new_block('user', at, sections)
+        self._new_block('user', at, sections, message_id=message_id)
         self._rewrite_tail(len(self._blocks) - 1)
+
+    def set_last_user_message_id(self, message_id: str) -> None:
+        """Attach the app-assigned id to the newest user block, making it revertible."""
+        for index in range(len(self._blocks) - 1, -1, -1):
+            block = self._blocks[index]
+            if block.kind != 'user':
+                continue
+            if block.message_id == message_id:
+                return
+            block.message_id = message_id
+            self._rewrite_tail(index)
+            return
 
     def append_agent_delta(
         self, text: str, at: datetime | None = None, agent_id: str = '', path: tuple[str, ...] = ()
@@ -304,9 +335,9 @@ class MessagePane(RichLog):
     # --- block bookkeeping --------------------------------------------------
 
     def _new_block(
-        self, kind: str, at: datetime | None, sections: list[tuple[str, str, str]], agent: str = ''
+        self, kind: str, at: datetime | None, sections: list[tuple[str, str, str]], agent: str = '', message_id: str = ''
     ) -> _Block:
-        block = _Block(kind, self._format_time(at), agent)
+        block = _Block(kind, self._format_time(at), agent, message_id=message_id)
         for mode, name, text in sections:
             block.sections.append(_Section(mode, name, text))
         block.start = len(self.lines)
@@ -427,13 +458,28 @@ class MessagePane(RichLog):
         head = Text()
         head.append(f'{label} ', Style(bold=True, color=_LABEL_COLORS.get(block.kind, '#808080')))
         dt = block.time
-        head.append(' ' * self._pad_to(cell_len(label) + 1 + cell_len(dt) + len(' [copy]')))
+        revert = self._revertible(block)
+        tail = cell_len(dt) + len(' [copy]') + (len(' [revert]') if revert else 0)
+        head.append(' ' * self._pad_to(cell_len(label) + 1 + tail))
         head.append(dt, Style(dim=True, color='#808080'))
+        if revert:
+            head.append(' [revert]', Style(color=_REVERT, meta={'@click': f'revert_message({idx})'}))
         head.append(' [copy]', Style(color=_ACCENT, meta={'@click': f'copy_message({idx})'}))
         width = max(self.scrollable_content_region.width, 1)
         if head.cell_len > width:
             head.right_crop(len(head.plain) - len(_crop_plain(head.plain, 0, width)))
         return head
+
+    def _revertible(self, block: _Block) -> bool:
+        """True when ``block`` is a revertible user message.
+
+        The app can only trim back to a user message, and refuses when it is the
+        session's only one — so the button only appears once a second user turn
+        exists and the app has handed the block its message id.
+        """
+        if block.kind != 'user' or not block.message_id:
+            return False
+        return sum(1 for other in self._blocks if other.kind == 'user') > 1
 
     @staticmethod
     def _block_label(block: _Block) -> str:
@@ -490,6 +536,15 @@ class MessagePane(RichLog):
         if 0 <= message_index < len(self._blocks):
             self._copy_to_clipboards(self._copy_text(self._blocks[message_index]))
             self._clear_selection()
+
+    def action_revert_message(self, message_index: int) -> None:
+        """Ask to revert the session to the user message at ``message_index`` (the [revert] button)."""
+        if not (0 <= message_index < len(self._blocks)):
+            return
+        block = self._blocks[message_index]
+        if not self._revertible(block):
+            return
+        self.post_message(self.RevertRequested(self, block.message_id))
 
     def action_toggle_section(self, block_index: int, section_index: int) -> None:
         """Expand/collapse an accordion section (thinking / tool result)."""

@@ -825,3 +825,95 @@ async def test_image_only_message_renders_without_a_body():
         pane.append_message('', images=['data:image/png;base64,AAAA'])
         assert [section.mode for section in pane._blocks[0].sections] == ['image']
         assert '[image 1]' in rendered_text(pane)
+
+
+class RevertPaneApp(App[None]):
+    def __init__(self) -> None:
+        super().__init__()
+        self.reverts: list[str] = []
+
+    def compose(self) -> ComposeResult:
+        yield MessagePane()
+
+    def on_message_pane_revert_requested(self, event: MessagePane.RevertRequested) -> None:
+        self.reverts.append(event.message_id)
+
+
+async def test_revert_button_sits_left_of_copy_in_orange_on_a_user_message():
+    async with PaneApp().run_test(size=(80, 100)) as pilot:
+        pane = pilot.app.query_one(MessagePane)
+        await pilot.pause()
+        pane.append_message('first', message_id='m1')
+        pane.append_message('second', message_id='m2')
+        head = pane._header_row(pane._blocks[0], 0)
+        assert head.plain.index('[revert]') < head.plain.index('[copy]')
+        revert_span = next(span for span in head.spans if 'revert' in head.plain[span.start:span.end])
+        assert revert_span.style.color == Color.parse(main_module._REVERT)
+        assert revert_span.style.meta['@click'] == 'revert_message(0)'
+
+
+async def test_revert_button_is_absent_for_a_lone_user_message():
+    async with PaneApp().run_test(size=(40, 100)) as pilot:
+        pane = pilot.app.query_one(MessagePane)
+        await pilot.pause()
+        pane.append_message('only', message_id='m1')
+        head = pane._header_row(pane._blocks[0], 0)
+        assert '[copy]' in head.plain
+        assert '[revert]' not in head.plain
+
+
+async def test_revert_button_is_absent_without_a_message_id():
+    async with PaneApp().run_test(size=(40, 100)) as pilot:
+        pane = pilot.app.query_one(MessagePane)
+        await pilot.pause()
+        pane.append_message('first')
+        pane.append_message('second')
+        head = pane._header_row(pane._blocks[0], 0)
+        assert '[copy]' in head.plain
+        assert '[revert]' not in head.plain
+
+
+async def test_revert_button_is_absent_on_agent_blocks():
+    async with PaneApp().run_test(size=(80, 100)) as pilot:
+        pane = pilot.app.query_one(MessagePane)
+        await pilot.pause()
+        pane.append_agent_delta('answer', agent_id=MAIN_AGENT)
+        pane.close_agent_message(MAIN_AGENT)
+        head = pane._header_row(pane._blocks[0], 0)
+        assert '[copy]' in head.plain
+        assert '[revert]' not in head.plain
+
+
+async def test_action_revert_message_posts_the_user_message_id():
+    async with RevertPaneApp().run_test(size=(40, 100)) as pilot:
+        pane = pilot.app.query_one(MessagePane)
+        await pilot.pause()
+        pane.append_message('first', message_id='m1')
+        pane.append_message('second', message_id='m2')
+        pane.action_revert_message(1)
+        await pilot.pause()
+        assert pilot.app.reverts == ['m2']
+
+
+async def test_action_revert_message_ignores_non_revertible_blocks():
+    async with RevertPaneApp().run_test(size=(40, 100)) as pilot:
+        pane = pilot.app.query_one(MessagePane)
+        await pilot.pause()
+        pane.append_message('only', message_id='m1')
+        pane.action_revert_message(0)
+        pane.action_revert_message(9)
+        await pilot.pause()
+        assert pilot.app.reverts == []
+
+
+async def test_set_last_user_message_id_attaches_the_id_and_renders_the_button():
+    async with PaneApp().run_test(size=(80, 100)) as pilot:
+        pane = pilot.app.query_one(MessagePane)
+        await pilot.pause()
+        pane.append_message('first')
+        pane.append_message('second')
+        assert '[revert]' not in rendered_text(pane)
+        pane.set_last_user_message_id('m2')
+        assert pane._blocks[1].message_id == 'm2'
+        assert pane._blocks[0].message_id == ''
+        assert '[revert]' in rendered_text(pane)

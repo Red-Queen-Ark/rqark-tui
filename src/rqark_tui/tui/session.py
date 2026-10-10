@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Protocol
 
+from rqark_app.types.session import Session
 from rqark_core.types.tool import PlanItem
 from textual.worker import Worker
 
@@ -23,6 +24,10 @@ class SessionHandler(Protocol):
     async def chat(self, text: str, images: list[str] | None = None) -> None: ...
 
     async def command(self, command: str) -> str | None: ...
+
+    async def revert(self, message_id: str) -> Session | None:
+        """Trim the session back to the user message ``message_id`` (None when impossible)."""
+        ...
 
     async def close(self) -> None:
         """Release the session (its stored transcript is dropped with its tab)."""

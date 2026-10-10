@@ -273,6 +273,58 @@ class AgentTUI(QuitHandler, App):
         if session is not None:
             self.close_session(session.key)
 
+    def on_message_pane_revert_requested(self, event: MessagePane.RevertRequested) -> None:
+        """``[revert]`` clicked: confirm, then trim the session back to that message."""
+        session = self._session_for_pane(event.control)
+        if session is None or session.handler is None:
+            return
+        if session.busy:
+            self.notify('Still processing — please wait', severity='warning', timeout=4)
+            return
+        if self._dialog_open:
+            return
+        self._focus_input()
+        message_id = event.message_id
+        self.push_screen(
+            YesNoDialog(
+                'Revert to this message? Everything after it will be removed.',
+                title='Revert?',
+                yes_label='Revert',
+                no_label='Cancel',
+                default_yes=False,
+            ),
+            lambda confirmed: self._revert_confirmed(session, message_id, confirmed),
+        )
+
+    def _session_for_pane(self, pane: MessagePane) -> ChatSession | None:
+        for session in self._sessions.values():
+            if session.pane is pane:
+                return session
+        return None
+
+    def _revert_confirmed(self, session: ChatSession, message_id: str, confirmed: bool | None) -> None:
+        """Dialog dismissal: only a yes trims the session."""
+        self._focus_input()
+        if not confirmed:
+            return
+        self.run_worker(self._revert_session(session, message_id), name=f'revert-{session.key}', group='agent', exit_on_error=False)
+
+    async def _revert_session(self, session: ChatSession, message_id: str) -> None:
+        handler = session.handler
+        if handler is None:
+            return
+        try:
+            reverted = await handler.revert(message_id)
+        except Exception as error:
+            self.notify(str(error), severity='error', timeout=8)
+            return
+        if reverted is None:
+            self.notify('Nothing to revert', severity='warning', timeout=4)
+            return
+        session.pane.clear()
+        self._replay(session, reverted.get_last_chunk())
+        self.notify('Reverted')
+
     async def _drop_session(self, session: ChatSession) -> None:
         """Take a session off screen: its tab, its pane, its routings and its draft.
 
@@ -351,7 +403,7 @@ class AgentTUI(QuitHandler, App):
             if isinstance(m, (SummaryMessage, SystemMessage)):
                 pane.append_system(m.content, at)
             elif isinstance(m, UserMessage):
-                pane.append_message(m.content, at, m.images)
+                pane.append_message(m.content, at, m.images, m.id)
             elif isinstance(m, AssistantMessage):
                 if m.reasoning_content:
                     pane.append_think_delta(m.reasoning_content, at, agent_id)
@@ -365,10 +417,16 @@ class AgentTUI(QuitHandler, App):
             elif isinstance(m, ToolMessage):
                 pane.append_tool_result(m.tool_name or '', m.content, at, agent_id)
 
-    def append_message(self, text: str, at: datetime | None = None, images: Sequence[str] | None = None, key: str | None = None) -> None:
+    def append_message(self, text: str, at: datetime | None = None, images: Sequence[str] | None = None, message_id: str = '', key: str | None = None) -> None:
         pane = self._pane_for(key)
         if pane is not None:
-            pane.append_message(text, at, images)
+            pane.append_message(text, at, images, message_id)
+
+    def set_user_message_id(self, message_id: str, agent_id: str = '', path: tuple[str, ...] = ()) -> None:
+        """Attach a live user message's app id to its pane block, making it revertible."""
+        pane = self._pane_for(None, agent_id, path)
+        if pane is not None:
+            pane.set_last_user_message_id(message_id)
 
     def append_agent_delta(self, text: str, at: datetime | None = None, agent_id: str = '', path: tuple[str, ...] = (), key: str | None = None) -> None:
         pane = self._pane_for(key, agent_id, path)

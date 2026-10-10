@@ -7,7 +7,7 @@ from rqark_app.config.manager import ConfigManager
 from rqark_app.session.manager import SessionManager
 from rqark_app.session.storage import CloudStorage, JSONLStorage
 from rqark_app.types.event import ProviderSwitch
-from rqark_core.types.chat import Chunk, ToolMessage
+from rqark_core.types.chat import Chunk, ToolMessage, UserMessage
 from rqark_core.types.event import AgentPayload
 from rqark_core.types.tool import PlanItem
 
@@ -69,6 +69,8 @@ async def connect_agent_event_to_tui(app: AgentApp, tui: AgentTUI):
 
     @app.on_message()
     async def message(ev: AgentPayload[Message]) -> None:
+        if isinstance(ev.payload, UserMessage):
+            tui.set_user_message_id(ev.payload.id, ev.agent_id, ev.path)
         tui.close_agent_message(ev.agent_id, ev.path)
 
     @app.on_plan()

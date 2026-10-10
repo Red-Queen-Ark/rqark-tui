@@ -48,6 +48,7 @@ class FakeSessionManager:
         self.saved: list[str] = []
         self.deleted: list[str] = []
         self.created = 0
+        self.reverted: list[tuple[str, str]] = []
 
     async def create(self) -> Session:
         self.created += 1
@@ -64,6 +65,14 @@ class FakeSessionManager:
     async def delete(self, uuid: str) -> None:
         self.deleted.append(uuid)
         self.sessions.pop(uuid, None)
+
+    async def revert(self, session_id: str, message_id: str) -> Session | None:
+        self.reverted.append((session_id, message_id))
+        session = self.sessions.get(session_id)
+        if session is None or session.revert_to(message_id) is None:
+            return None
+        await self.save(session_id)
+        return session
 
 
 class FakeChatHelper:
@@ -579,3 +588,32 @@ async def test_closing_without_a_session_forgets_nothing():
     handler, _app, _tui, config, _agents = build()
     await handler.close()
     assert config.dir_cache.forgotten == []
+
+
+async def test_revert_trims_the_session_to_a_user_message():
+    handler, app, _tui, _config, _agents = build()
+    session = await app.session_mgr.create()
+    handler.session_id = session.uuid
+    first = UserMessage('first')
+    session.history = [first, AssistantMessage('answer'), UserMessage('second')]
+    reverted = await handler.revert(first.id)
+    assert reverted is session
+    assert app.session_mgr.reverted == [(session.uuid, first.id)]
+    assert session.history == [first]
+    assert app.session_mgr.saved == [session.uuid]
+
+
+async def test_revert_returns_none_when_the_message_is_not_a_user_turn():
+    handler, app, _tui, _config, _agents = build()
+    session = await app.session_mgr.create()
+    handler.session_id = session.uuid
+    first = UserMessage('first')
+    answer = AssistantMessage('answer')
+    session.history = [first, answer, UserMessage('second')]
+    assert await handler.revert(answer.id) is None
+
+
+async def test_revert_without_a_session_returns_none():
+    handler, app, _tui, _config, _agents = build()
+    assert await handler.revert('m1') is None
+    assert app.session_mgr.reverted == []

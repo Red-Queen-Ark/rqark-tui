@@ -1,12 +1,13 @@
 import asyncio
 from collections.abc import Sequence
 
-from rqark_app.types.session import SummaryMessage, message_from_dict
+from rqark_app.types.session import Session, SummaryMessage, message_from_dict
 from rqark_core.types.chat import AssistantMessage, Message, SystemMessage, ToolMessage, UserMessage
 from rqark_core.types.tool import PlanItem
 from textual.widgets import Static
 
 from rqark_tui.tui import AgentTUI
+from rqark_tui.tui.components.dialog import YesNoDialog
 from rqark_tui.tui.components.footer import ChatInput
 from rqark_tui.tui.components.header import HeaderBar
 from rqark_tui.tui.components.main import MessagePane
@@ -25,12 +26,14 @@ class StubTool:
 class StubBridge:
     """Minimal SessionHandler: records what it is asked to do, can block, error or reply."""
 
-    def __init__(self, delay: float = 0.0, error: BaseException | None = None, reply: str | None = None) -> None:
+    def __init__(self, delay: float = 0.0, error: BaseException | None = None, reply: str | None = None, reverted: 'Session | None' = None) -> None:
         self.delay = delay
         self.error = error
         self.reply = reply
+        self.reverted = reverted
         self.chats: list[tuple[str, list[str]]] = []
         self.commands: list[str] = []
+        self.reverts: list[str] = []
         self.keys: list[str] = []
 
     async def chat(self, text: str, images: list[str] | None = None) -> None:
@@ -45,6 +48,12 @@ class StubBridge:
         if self.error is not None:
             raise self.error
         return self.reply
+
+    async def revert(self, message_id: str) -> 'Session | None':
+        self.reverts.append(message_id)
+        if self.error is not None:
+            raise self.error
+        return self.reverted
 
 
 def bridge_factory(bridge: StubBridge):
@@ -462,3 +471,94 @@ async def test_restored_user_message_with_images_is_replayed():
         text = rendered_text(tui.query_one(MessagePane))
         assert 'old picture' in text
         assert '[image 1]' in text
+
+
+async def test_restored_user_message_keeps_its_app_id():
+    tui = AgentTUI()
+    tui.open_sessions([('stored-uuid', '', [UserMessage('old', id='m-old')])])
+    async with tui.run_test(size=(40, 100)) as pilot:
+        await pilot.pause()
+        assert tui.pane._blocks[0].message_id == 'm-old'
+
+
+async def test_set_user_message_id_marks_the_live_user_block():
+    tui = AgentTUI()
+    tui.open_sessions([('stored-uuid', '', [])])
+    async with tui.run_test(size=(40, 100)) as pilot:
+        await pilot.pause()
+        tui.append_message('hi')
+        tui.set_user_message_id('m-live', 'angel:stored-uuid')
+        assert tui.pane._blocks[0].message_id == 'm-live'
+
+
+def revert_ready_tui(bridge: StubBridge) -> AgentTUI:
+    tui = AgentTUI()
+    tui.set_session_factory(bridge_factory(bridge))
+    return tui
+
+
+async def test_revert_request_confirms_then_trims_the_session():
+    reverted = Session(uuid='s1', history=[UserMessage('first', id='m1')])
+    bridge = StubBridge(reverted=reverted)
+    tui = revert_ready_tui(bridge)
+    async with tui.run_test(size=(40, 100)) as pilot:
+        await pilot.pause()
+        pane = tui.pane
+        pane.append_message('first', message_id='m1')
+        pane.append_message('second', message_id='m2')
+        pane.action_revert_message(0)
+        await pilot.pause()
+        assert isinstance(tui.screen, YesNoDialog)
+        await pilot.press('ctrl+e')
+        await pilot.pause(0.1)
+        assert bridge.reverts == ['m1']
+        assert [block.kind for block in pane._blocks] == ['user']
+        assert 'first' in rendered_text(pane)
+        assert 'second' not in rendered_text(pane)
+
+
+async def test_revert_request_can_be_cancelled():
+    bridge = StubBridge(reverted=Session(uuid='s1'))
+    tui = revert_ready_tui(bridge)
+    async with tui.run_test(size=(40, 100)) as pilot:
+        await pilot.pause()
+        pane = tui.pane
+        pane.append_message('first', message_id='m1')
+        pane.append_message('second', message_id='m2')
+        pane.action_revert_message(0)
+        await pilot.pause()
+        await pilot.press('escape')
+        await pilot.pause()
+        assert bridge.reverts == []
+        assert [block.kind for block in pane._blocks] == ['user', 'user']
+
+
+async def test_revert_request_is_ignored_while_busy():
+    bridge = StubBridge(reverted=Session(uuid='s1'))
+    tui = revert_ready_tui(bridge)
+    async with tui.run_test(size=(40, 100)) as pilot:
+        await pilot.pause()
+        pane = tui.pane
+        pane.append_message('first', message_id='m1')
+        pane.append_message('second', message_id='m2')
+        tui.active_session.busy = True
+        pane.action_revert_message(0)
+        await pilot.pause()
+        assert not isinstance(tui.screen, YesNoDialog)
+        assert bridge.reverts == []
+
+
+async def test_revert_that_does_nothing_warns_and_keeps_the_pane():
+    bridge = StubBridge(reverted=None)
+    tui = revert_ready_tui(bridge)
+    async with tui.run_test(size=(40, 100)) as pilot:
+        await pilot.pause()
+        pane = tui.pane
+        pane.append_message('first', message_id='m1')
+        pane.append_message('second', message_id='m2')
+        pane.action_revert_message(0)
+        await pilot.pause()
+        await pilot.press('ctrl+e')
+        await pilot.pause(0.1)
+        assert bridge.reverts == ['m1']
+        assert [block.kind for block in pane._blocks] == ['user', 'user']

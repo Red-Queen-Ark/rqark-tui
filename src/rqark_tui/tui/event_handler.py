@@ -4,6 +4,7 @@ from rich.markup import escape
 from rqark_app.agent.manager import AgentManager
 from rqark_app.app import AgentApp
 from rqark_app.config.manager import ConfigManager
+from rqark_app.types.session import Session
 from rqark_core.types.chat import AssistantMessage, Chunk, UserMessage
 from rqark_core.types.event import AgentPayload
 
@@ -119,6 +120,12 @@ class EventHandler:
             return
         await self.app.session_mgr.delete(self.session_id)
         self.forget_session()
+
+    async def revert(self, message_id: str) -> Session | None:
+        """Trim the session back to the user message ``message_id`` (None when impossible)."""
+        if self.session_id is None:
+            return None
+        return await self.app.session_mgr.revert(self.session_id, message_id)
 
     async def command(self, command: str) -> str | None:
         name, _, arg = command.partition(' ')
