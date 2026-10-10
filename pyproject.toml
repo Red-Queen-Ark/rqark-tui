@@ -7,8 +7,8 @@ requires-python = ">=3.14"
 dependencies = [
     "textual>=8.2.8",
     "wcwidth>=0.8.3",
-    "rqark-app==0.3.4",
-    "rqark-core==0.2.11",
+    "rqark-app==0.3.5",
+    "rqark-core==0.2.12",
 ]
 
 [project.scripts]
