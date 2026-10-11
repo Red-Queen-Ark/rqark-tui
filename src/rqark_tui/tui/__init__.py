@@ -26,6 +26,9 @@ CLOSE_COMMAND = '/close'
 #: Slash command the TUI answers itself: adding a session (the ``+`` tab does the same).
 NEW_COMMAND = '/new'
 
+#: Slash command that runs long enough to need a status line while it works.
+COMPACT_COMMAND = '/compact'
+
 #: Builds the per-session bridge to the agent app: ``(session key, app session id)``.
 SessionFactory = Callable[[str, str | None], SessionHandler]
 
@@ -321,8 +324,7 @@ class AgentTUI(QuitHandler, App):
         if reverted is None:
             self.notify('Nothing to revert', severity='warning', timeout=4)
             return
-        session.pane.clear()
-        self._replay(session, reverted.get_last_chunk())
+        self.replay_session(session.key, reverted.get_last_chunk())
         self.notify('Reverted')
 
     async def _drop_session(self, session: ChatSession) -> None:
@@ -362,6 +364,26 @@ class AgentTUI(QuitHandler, App):
             return
         session.title = title
         self.query_one(SessionTabs).set_label(key, session.label)
+
+    def replay_session(self, key: str, messages: Sequence[Message | SummaryMessage]) -> None:
+        """Rebuild a session's pane from ``messages`` (its history was rewritten)."""
+        session = self._sessions.get(key)
+        if session is None:
+            return
+        session.pane.clear()
+        self._replay(session, messages)
+
+    def show_status(self, key: str, text: str) -> None:
+        """Show a session's transient status line (progress of a running command)."""
+        pane = self.session_pane(key)
+        if pane is not None:
+            pane.show_status(text)
+
+    def hide_status(self, key: str) -> None:
+        """Drop a session's transient status line."""
+        pane = self.session_pane(key)
+        if pane is not None:
+            pane.hide_status()
 
     def clear_session(self, key: str) -> None:
         """Empty a session: its transcript, its title, its plan and its stored id."""
@@ -510,6 +532,9 @@ class AgentTUI(QuitHandler, App):
         if command == CLOSE_COMMAND:
             self.close_active_session()
             return
+        if command == COMPACT_COMMAND and session.busy:
+            self.notify('Still processing — please wait', severity='warning', timeout=4)
+            return
         if text.startswith('/') and session.handler is not None:
             self.run_worker(self._run_command(session, text), name=f'command-{session.key}', group='agent', exit_on_error=False)
             return
@@ -544,11 +569,19 @@ class AgentTUI(QuitHandler, App):
         handler = session.handler
         if handler is None:
             return
+        # A command holds the session while it runs: `/compact` spends seconds on the
+        # provider, and its own guard (`on_chat_input_submitted`) keeps a second
+        # submission from racing the transcript rewrite.
+        session.busy = True
+        self.query_one(SessionTabs).set_busy(session.key, True)
         try:
             reply = await handler.command(command)
         except Exception as error:
             self.notify(str(error), severity='error', timeout=8)
             return
+        finally:
+            session.busy = False
+            self.query_one(SessionTabs).set_busy(session.key, False)
         if reply:
             session.pane.append_system(reply)
 

@@ -28,6 +28,7 @@ _LABEL_COLORS = {
     'agent': '#A020F0',
     'tools': '#A020F0',
     'system': '#808080',
+    'status': '#4FC1FF',
 }
 
 _ACCENT = '#4FC1FF'
@@ -198,6 +199,8 @@ class MessagePane(RichLog):
         self._tool_keys: dict[str, str] = {}
         self._dirty_index: int | None = None
         self._flush_timer: Timer | None = None
+        # The single transient status block (a running command's progress), if any.
+        self._status: _Block | None = None
 
     def set_tool_keys(self, tool_keys: dict[str, str]) -> None:
         self._tool_keys = tool_keys
@@ -332,6 +335,33 @@ class MessagePane(RichLog):
         self._new_block('system', at, [('sys', '', text)])
         self._rewrite_tail(len(self._blocks) - 1)
 
+    def show_status(self, text: str) -> None:
+        """Show a transient status line as the newest block, updating it in place.
+
+        A status line reports progress (``Compacting…``) rather than a message, so it
+        never accumulates: re-showing rewrites the same block and
+        :meth:`hide_status` takes it back off the transcript.
+        """
+        if self._status is not None and self._status in self._blocks:
+            self._status.sections[0].text = _content_text(text)
+            self._rewrite_tail(self._blocks.index(self._status))
+            return
+        self._flush_now()
+        self._close_last()
+        self._status = self._new_block('status', None, [('status', '', text)])
+        self._rewrite_tail(len(self._blocks) - 1)
+
+    def hide_status(self) -> None:
+        """Drop the transient status line, re-rendering the transcript without it."""
+        if self._status is None:
+            return
+        status, self._status = self._status, None
+        if status not in self._blocks:
+            return
+        self._flush_now()
+        self._blocks.remove(status)
+        self._rebuild()
+
     # --- block bookkeeping --------------------------------------------------
 
     def _new_block(
@@ -443,6 +473,9 @@ class MessagePane(RichLog):
             elif section.mode == 'error':
                 if section.text:
                     rows.append(Text(section.text, style=Style(color='#DC143C')))
+            elif section.mode == 'status':
+                if section.text:
+                    rows.append(Text(section.text, style=Style(color=_ACCENT, italic=True)))
             elif section.text:
                 rows.append(Text(section.text, style=Style(dim=True, color='#c0c0c0')))
             for row in rows:
@@ -561,6 +594,7 @@ class MessagePane(RichLog):
     def clear(self) -> 'MessagePane':
         """Clear the log and any active selection."""
         self._dirty_index = None
+        self._status = None
         self._blocks.clear()
         self._message_spans.clear()
         self._message_texts.clear()

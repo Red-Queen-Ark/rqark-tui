@@ -168,7 +168,7 @@ async def test_slash_prefix_opens_the_command_popup():
         chat.text = '/'
         await pilot.pause()
         assert popup.display is True
-        assert [entry[1] for entry in popup._entries] == ['/clear', '/close', '/new', '/stop', '/models', '/agents']
+        assert [entry[1] for entry in popup._entries] == ['/clear', '/close', '/compact', '/new', '/stop', '/models', '/agents']
         assert chat.popup_active is True
 
 
@@ -179,7 +179,7 @@ async def test_typing_a_prefix_filters_command_entries():
         popup = app.query_one(PopupSelector)
         await pilot.pause()
         await type_text(pilot, chat, '/c')
-        assert [entry[1] for entry in popup._entries] == ['/clear', '/close']
+        assert [entry[1] for entry in popup._entries] == ['/clear', '/close', '/compact']
         assert popup.display is True
 
 

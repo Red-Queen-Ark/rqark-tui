@@ -3,6 +3,7 @@ import asyncio
 from rich.markup import escape
 from rqark_app.agent.manager import AgentManager
 from rqark_app.app import AgentApp
+from rqark_app.compact import compact_messages
 from rqark_app.config.manager import ConfigManager
 from rqark_app.types.session import Session
 from rqark_core.types.chat import AssistantMessage, Chunk, UserMessage
@@ -144,6 +145,26 @@ class EventHandler:
                 self._stop_requested = True
                 self.tui.cancel_chat(self.key)
                 return 'Stopped'
+            case '/compact':
+                if self.session_id is None:
+                    return 'Nothing to compact'
+                session = await self.app.session_mgr.get(self.session_id)
+                if session is None:
+                    return 'Nothing to compact'
+                messages = session.get_last_chunk_for_chat()
+                if not compact_messages(messages):
+                    return 'Nothing to compact'
+                self.tui.show_status(self.key, 'Compacting…')
+                try:
+                    summary = await self.app.compactor.get_summary(messages)
+                finally:
+                    self.tui.hide_status(self.key)
+                if summary is None:
+                    return 'Compaction failed, the conversation is unchanged'
+                session.history.append(summary)
+                await self.app.session_mgr.save(session.uuid)
+                self.tui.replay_session(self.key, session.get_last_chunk())
+                return 'Conversation compacted'
             case '/models':
                 providers = self.app.provider_mgr.providers
                 if not providers:

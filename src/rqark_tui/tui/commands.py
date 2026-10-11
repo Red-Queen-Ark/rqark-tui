@@ -1,6 +1,7 @@
 COMMANDS: tuple[tuple[str, str], ...] = (
     ('/clear', 'Clear the current conversation'),
     ('/close', 'Close this session'),
+    ('/compact', 'Compact the current conversation'),
     ('/new', 'Start a new session'),
     ('/stop', 'Stop the current response'),
     ('/models', 'Switch model'),

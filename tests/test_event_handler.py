@@ -7,8 +7,8 @@ from rqark_app.agent.manager import AgentManager
 from rqark_app.app import AgentApp
 from rqark_app.config.manager import ConfigManager
 from rqark_app.provider.manager import ProviderManager
-from rqark_app.types.session import Session
-from rqark_core.types.chat import AssistantMessage, Chunk, UserMessage
+from rqark_app.types.session import Session, SummaryMessage
+from rqark_core.types.chat import AssistantMessage, Chunk, Message, ToolMessage, UserMessage
 from rqark_core.types.event import AgentPayload
 from rqark_core.types.provider import Provider
 
@@ -85,6 +85,16 @@ class FakeChatHelper:
         return FakeTitled(self.title)
 
 
+class FakeCompactor:
+    def __init__(self, summary: SummaryMessage | None = None) -> None:
+        self.summary = summary
+        self.calls: list[list[Message]] = []
+
+    async def get_summary(self, messages: list[Message]) -> SummaryMessage | None:
+        self.calls.append(list(messages))
+        return self.summary
+
+
 class FakeDirCache:
     def __init__(self) -> None:
         self.stored: list[tuple[str, str]] = []
@@ -117,6 +127,9 @@ class FakeTUI:
         self.agent_names: list[str] = []
         self.cancelled: list[str | None] = []
         self.cleared: list[str] = []
+        self.replayed: list[tuple[str, list[object]]] = []
+        self.statuses: list[tuple[str, str]] = []
+        self.status_hidden: list[str] = []
         self.bound: list[tuple[str, str]] = []
         self.key = key
 
@@ -135,6 +148,15 @@ class FakeTUI:
     def clear_session(self, key: str) -> None:
         self.cleared.append(key)
 
+    def replay_session(self, key: str, messages) -> None:
+        self.replayed.append((key, list(messages)))
+
+    def show_status(self, key: str, text: str) -> None:
+        self.statuses.append((key, text))
+
+    def hide_status(self, key: str) -> None:
+        self.status_hidden.append(key)
+
     def bind_session(self, key: str, session_id: str) -> None:
         self.bound.append((key, session_id))
 
@@ -151,6 +173,7 @@ class FakeApp:
         self.session_mgr = FakeSessionManager()
         self.provider_mgr = ProviderManager(make_providers())
         self.chat_helper = FakeChatHelper()
+        self.compactor = FakeCompactor()
         self.handlers: dict[str, object] = {}
         self.chat_calls: list[dict] = []
         self.stream_content = ''
@@ -617,3 +640,88 @@ async def test_revert_without_a_session_returns_none():
     handler, app, _tui, _config, _agents = build()
     assert await handler.revert('m1') is None
     assert app.session_mgr.reverted == []
+
+
+async def test_compact_summarises_the_last_chunk_and_saves_it():
+    handler, app, _tui, _config, _agents = build()
+    session = await app.session_mgr.create()
+    handler.session_id = session.uuid
+    first, answer = UserMessage('first'), AssistantMessage('answer')
+    session.history = [first, answer]
+    app.compactor.summary = SummaryMessage('the summary')
+    assert await handler.command('/compact') == 'Conversation compacted'
+    assert app.compactor.calls == [[first, answer]]
+    assert session.history == [first, answer, app.compactor.summary]
+    assert session.get_last_chunk() == [app.compactor.summary]
+    assert app.session_mgr.saved == [session.uuid]
+    assert _tui.replayed == [('session-1', [app.compactor.summary])]
+
+
+async def test_compact_tells_the_user_it_is_working():
+    handler, app, _tui, _config, _agents = build()
+    session = await app.session_mgr.create()
+    handler.session_id = session.uuid
+    session.history = [UserMessage('first'), AssistantMessage('answer')]
+    app.compactor.summary = SummaryMessage('the summary')
+    assert await handler.command('/compact') == 'Conversation compacted'
+    assert _tui.statuses == [('session-1', 'Compacting…')]
+    assert _tui.status_hidden == ['session-1']
+
+
+async def test_compact_drops_the_status_line_when_the_summary_fails():
+    handler, app, _tui, _config, _agents = build()
+    session = await app.session_mgr.create()
+    handler.session_id = session.uuid
+    session.history = [UserMessage('first'), AssistantMessage('answer')]
+    app.compactor.summary = None
+    assert await handler.command('/compact') == 'Compaction failed, the conversation is unchanged'
+    assert _tui.statuses == [('session-1', 'Compacting…')]
+    assert _tui.status_hidden == ['session-1']
+
+
+async def test_compact_reports_a_failure_without_touching_the_session():
+    handler, app, _tui, _config, _agents = build()
+    session = await app.session_mgr.create()
+    handler.session_id = session.uuid
+    first, answer = UserMessage('first'), AssistantMessage('answer')
+    session.history = [first, answer]
+    app.compactor.summary = None
+    assert await handler.command('/compact') == 'Compaction failed, the conversation is unchanged'
+    assert app.compactor.calls == [[first, answer]]
+    assert session.history == [first, answer]
+    assert app.session_mgr.saved == []
+    assert _tui.replayed == []
+
+
+async def test_compact_skips_the_compactor_when_there_is_nothing_to_summarise():
+    handler, app, _tui, _config, _agents = build()
+    session = await app.session_mgr.create()
+    handler.session_id = session.uuid
+    session.history = [ToolMessage(tool_call_id='1', content='tool output', tool_name='bash')]
+    app.compactor.summary = SummaryMessage('unused')
+    assert await handler.command('/compact') == 'Nothing to compact'
+    assert app.compactor.calls == []
+    assert _tui.statuses == []
+    assert app.session_mgr.saved == []
+
+
+async def test_compact_reports_nothing_without_a_history():
+    handler, app, _tui, _config, _agents = build()
+    session = await app.session_mgr.create()
+    handler.session_id = session.uuid
+    app.compactor.summary = SummaryMessage('unused')
+    assert await handler.command('/compact') == 'Nothing to compact'
+    assert app.compactor.calls == []
+    assert _tui.replayed == []
+
+
+async def test_compact_without_a_session_reports_nothing():
+    handler, app, _tui, _config, _agents = build()
+    assert await handler.command('/compact') == 'Nothing to compact'
+    assert app.compactor.calls == []
+
+
+async def test_compact_with_a_missing_session_reports_nothing():
+    handler, app, _tui, _config, _agents = build(session_id='missing')
+    assert await handler.command('/compact') == 'Nothing to compact'
+    assert app.compactor.calls == []
