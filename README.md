@@ -143,6 +143,7 @@ rqark-tui
 | --- | --- |
 | `/clear` | 清除目前對話（刪除 session 檔，保留 tab） |
 | `/close` | 關閉目前 session（確認後刪除 session 檔並收起 tab） |
+| `/compact` | 將目前對話壓縮成一段 summary（壓縮期間顯示 `Compacting…`，之後只帶 summary 同新訊息續聊） |
 | `/new` | 開一條新 session（同點 `+` 一樣） |
 | `/stop` | 停止目前回應（已收到的部分內容會存下） |
 | `/models` | 切換 model（picker 顯示目前可用 provider） |

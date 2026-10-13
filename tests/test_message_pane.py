@@ -181,6 +181,48 @@ async def test_flush_now_without_dirty_state_is_a_noop(monkeypatch):
         assert calls == []
 
 
+async def test_show_status_renders_one_line_that_updates_in_place():
+    async with PaneApp().run_test(size=(40, 100)) as pilot:
+        pane = pilot.app.query_one(MessagePane)
+        await pilot.pause()
+        pane.append_message('question')
+        pane.show_status('Compacting…')
+        assert pane._blocks[-1].kind == 'status'
+        assert 'Compacting…' in rendered_text(pane)
+        pane.show_status('Still compacting…')
+        assert [block.kind for block in pane._blocks].count('status') == 1
+        text = rendered_text(pane)
+        assert 'Still compacting…' in text
+        assert 'Compacting…' not in text
+
+
+async def test_hide_status_takes_the_line_off_the_transcript():
+    async with PaneApp().run_test(size=(40, 100)) as pilot:
+        pane = pilot.app.query_one(MessagePane)
+        await pilot.pause()
+        pane.append_message('question')
+        pane.show_status('Compacting…')
+        pane.hide_status()
+        assert pane._status is None
+        assert [block.kind for block in pane._blocks] == ['user']
+        assert 'Compacting…' not in rendered_text(pane)
+        assert 'question' in rendered_text(pane)
+
+
+async def test_hide_status_is_safe_without_a_status_or_after_a_clear():
+    async with PaneApp().run_test(size=(40, 100)) as pilot:
+        pane = pilot.app.query_one(MessagePane)
+        await pilot.pause()
+        pane.hide_status()
+        assert pane._blocks == []
+        pane.show_status('Compacting…')
+        pane.clear()
+        assert pane._status is None
+        pane.hide_status()
+        assert pane._blocks == []
+        assert pane.lines == []
+
+
 async def test_clear_drops_the_pending_stream():
     async with PaneApp().run_test(size=(40, 100)) as pilot:
         pane = pilot.app.query_one(MessagePane)

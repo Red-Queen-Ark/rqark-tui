@@ -26,11 +26,12 @@ class StubTool:
 class StubBridge:
     """Minimal SessionHandler: records what it is asked to do, can block, error or reply."""
 
-    def __init__(self, delay: float = 0.0, error: BaseException | None = None, reply: str | None = None, reverted: 'Session | None' = None) -> None:
+    def __init__(self, delay: float = 0.0, error: BaseException | None = None, reply: str | None = None, reverted: 'Session | None' = None, command_delay: float = 0.0) -> None:
         self.delay = delay
         self.error = error
         self.reply = reply
         self.reverted = reverted
+        self.command_delay = command_delay
         self.chats: list[tuple[str, list[str]]] = []
         self.commands: list[str] = []
         self.reverts: list[str] = []
@@ -45,6 +46,8 @@ class StubBridge:
 
     async def command(self, command: str) -> str | None:
         self.commands.append(command)
+        if self.command_delay:
+            await asyncio.sleep(self.command_delay)
         if self.error is not None:
             raise self.error
         return self.reply
@@ -172,6 +175,28 @@ async def test_restored_summary_and_system_messages_are_replayed():
         text = rendered_text(tui.query_one(MessagePane))
         assert 'summary text' in text
         assert 'system note' in text
+
+
+async def test_replay_session_rebuilds_the_pane_from_new_history():
+    tui = AgentTUI()
+    tui.open_sessions([('stored-uuid', '', [UserMessage('old question'), AssistantMessage(content='old answer')])])
+    async with tui.run_test(size=(40, 100)) as pilot:
+        await pilot.pause()
+        tui.replay_session('session-1', [SummaryMessage('compacted summary')])
+        await pilot.pause()
+        text = rendered_text(tui.query_one(MessagePane))
+        assert 'compacted summary' in text
+        assert 'old question' not in text
+        assert 'old answer' not in text
+
+
+async def test_replay_session_ignores_an_unknown_key():
+    tui = AgentTUI()
+    async with tui.run_test(size=(40, 100)) as pilot:
+        await pilot.pause()
+        tui.replay_session('missing', [UserMessage('nope')])
+        await pilot.pause()
+        assert tui.pane._blocks == []
 
 
 async def test_open_sessions_while_running_adds_tabs():
@@ -372,6 +397,58 @@ async def test_slash_input_is_dispatched_to_the_command_handler():
         await pilot.pause(0.1)
         assert bridge.commands == ['/clear']
         assert 'done' in rendered_text(tui.query_one(MessagePane))
+
+
+async def test_a_long_command_marks_the_session_busy_until_it_finishes():
+    tui = AgentTUI()
+    bridge = StubBridge(reply='compacted', command_delay=0.2)
+    tui.set_session_factory(bridge_factory(bridge))
+    async with tui.run_test(size=(40, 100)) as pilot:
+        await pilot.pause()
+        tabs = tui.query_one(SessionTabs)
+        tui.query_one(ChatInput).text = '/compact'
+        await pilot.press('enter')
+        await pilot.pause(0.05)
+        assert tui.active_session.busy is True
+        assert tabs.get_tab('tab-session-1').has_class('-busy')
+        await pilot.pause(0.4)
+        assert tui.active_session.busy is False
+        assert not tabs.get_tab('tab-session-1').has_class('-busy')
+        assert 'compacted' in rendered_text(tui.query_one(MessagePane))
+
+
+async def test_compact_is_refused_while_the_session_is_busy():
+    tui = AgentTUI()
+    bridge = StubBridge()
+    tui.set_session_factory(bridge_factory(bridge))
+    async with tui.run_test(size=(40, 100)) as pilot:
+        await pilot.pause()
+        tui.active_session.busy = True
+        tui.query_one(ChatInput).text = '/compact'
+        await pilot.press('enter')
+        await pilot.pause(0.1)
+        assert bridge.commands == []
+        assert tui.query_one(MessagePane)._blocks == []
+
+
+async def test_status_line_is_shown_and_taken_back_off():
+    tui = AgentTUI()
+    async with tui.run_test(size=(40, 100)) as pilot:
+        await pilot.pause()
+        tui.show_status('session-1', 'Compacting…')
+        assert 'Compacting…' in rendered_text(tui.query_one(MessagePane))
+        tui.hide_status('session-1')
+        assert 'Compacting…' not in rendered_text(tui.query_one(MessagePane))
+        assert tui.query_one(MessagePane)._blocks == []
+
+
+async def test_status_helpers_ignore_an_unknown_session():
+    tui = AgentTUI()
+    async with tui.run_test(size=(40, 100)) as pilot:
+        await pilot.pause()
+        tui.show_status('missing', 'Compacting…')
+        tui.hide_status('missing')
+        assert tui.query_one(MessagePane)._blocks == []
 
 
 async def test_command_handler_errors_do_not_break_the_app():
