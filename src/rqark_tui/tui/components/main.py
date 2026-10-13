@@ -418,9 +418,19 @@ class MessagePane(RichLog):
         if index is not None:
             self._rewrite_tail(index)
 
+    def _pinned_to_tail(self) -> bool:
+        """Whether the newest line is on screen, so appends may scroll back down.
+
+        Asked *before* the transcript is touched: a user who scrolled up (wheel,
+        scrollbar, keyboard) keeps reading the same rows while the log grows, and
+        is only pulled back to the tail once they scroll down to it themselves.
+        """
+        return self.scroll_offset.y >= self.max_scroll_y
+
     def _rewrite_tail(self, idx: int) -> None:
         if not self._size_known:
             return
+        pinned = self._pinned_to_tail()
         self._dirty_index = None
         del self.lines[self._blocks[idx].start:]
         self._line_cache.clear()
@@ -430,9 +440,12 @@ class MessagePane(RichLog):
         for index in range(idx, len(self._blocks)):
             self._blocks[index].start = len(self.lines)
             self._emit_block(index)
+        if pinned:
+            self.scroll_end(animate=False)
         self._clear_selection()
 
     def _rebuild(self) -> None:
+        pinned = self._pinned_to_tail()
         self._dirty_index = None
         del self.lines[:]
         self._line_cache.clear()
@@ -443,6 +456,8 @@ class MessagePane(RichLog):
             block = self._blocks[idx]
             block.start = len(self.lines)
             self._emit_block(idx)
+        if pinned:
+            self.scroll_end(animate=False)
         self._clear_selection()
 
     def _emit_block(self, idx: int) -> None:
@@ -484,7 +499,6 @@ class MessagePane(RichLog):
         if end > start:
             self._message_spans.append((start, end))
             self._message_texts.append(self._copy_text(block))
-        self.scroll_end(animate=False)
 
     def _header_row(self, block: _Block, idx: int) -> Text:
         label = self._block_label(block)

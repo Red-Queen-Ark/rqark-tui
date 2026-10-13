@@ -959,3 +959,75 @@ async def test_set_last_user_message_id_attaches_the_id_and_renders_the_button()
         assert pane._blocks[1].message_id == 'm2'
         assert pane._blocks[0].message_id == ''
         assert '[revert]' in rendered_text(pane)
+
+
+def fill_pane(pane: MessagePane, count: int = 40) -> None:
+    for index in range(count):
+        pane.append_system(f'line {index}')
+
+
+async def test_appends_follow_the_tail_while_the_view_sits_at_the_bottom():
+    async with PaneApp().run_test(size=(40, 20)) as pilot:
+        pane = pilot.app.query_one(MessagePane)
+        await pilot.pause()
+        fill_pane(pane)
+        await pilot.pause()
+        assert pane.max_scroll_y > 0
+        assert pane.scroll_offset.y == pane.max_scroll_y
+
+
+async def test_appends_do_not_pull_a_scrolled_up_view_to_the_tail():
+    async with PaneApp().run_test(size=(40, 20)) as pilot:
+        pane = pilot.app.query_one(MessagePane)
+        await pilot.pause()
+        fill_pane(pane)
+        await pilot.pause()
+        pane.scroll_y = 0
+        await pilot.pause()
+        pane.append_system('newest')
+        await pilot.pause()
+        assert pane.scroll_offset.y == 0
+
+
+async def test_appends_follow_again_once_the_view_is_back_at_the_tail():
+    async with PaneApp().run_test(size=(40, 20)) as pilot:
+        pane = pilot.app.query_one(MessagePane)
+        await pilot.pause()
+        fill_pane(pane)
+        await pilot.pause()
+        pane.scroll_y = 0
+        await pilot.pause()
+        pane.append_system('while scrolled up')
+        await pilot.pause()
+        pane.scroll_y = pane.max_scroll_y
+        await pilot.pause()
+        pane.append_system('newest')
+        await pilot.pause()
+        assert pane.scroll_offset.y == pane.max_scroll_y
+
+
+async def test_streaming_deltas_do_not_pull_a_scrolled_up_view_to_the_tail():
+    async with PaneApp().run_test(size=(40, 20)) as pilot:
+        pane = pilot.app.query_one(MessagePane)
+        await pilot.pause()
+        fill_pane(pane)
+        await pilot.pause()
+        pane.scroll_y = 0
+        await pilot.pause()
+        for _ in range(3):
+            pane.append_agent_delta('token ')
+            await pilot.pause(0.3)
+        assert pane.scroll_offset.y == 0
+
+
+async def test_rebuild_from_a_resize_does_not_pull_a_scrolled_up_view_to_the_tail():
+    async with PaneApp().run_test(size=(40, 20)) as pilot:
+        pane = pilot.app.query_one(MessagePane)
+        await pilot.pause()
+        fill_pane(pane)
+        await pilot.pause()
+        pane.scroll_y = 0
+        await pilot.pause()
+        await pilot.resize_terminal(30, 20)
+        await pilot.pause()
+        assert pane.scroll_offset.y == 0
