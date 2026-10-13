@@ -40,23 +40,35 @@ def load_agent_manager(config_mgr: ConfigManager) -> AgentManager:
     return AgentManager(config_mgr.agents)
 
 
+def _is_subagent(ev: AgentPayload) -> bool:
+    return bool(ev.path)
+
+
 async def connect_agent_event_to_tui(app: AgentApp, tui: AgentTUI):
     @app.on_think()
     async def think(ev: AgentPayload[Chunk]) -> None:
+        if _is_subagent(ev):
+            return
         tui.append_think_delta(str(ev.payload.content), agent_id=ev.agent_id, path=ev.path)
 
     @app.on_content()
     async def content(ev: AgentPayload[Chunk]) -> None:
+        if _is_subagent(ev):
+            return
         tui.append_agent_delta(str(ev.payload.content), agent_id=ev.agent_id, path=ev.path)
 
     @app.on_tool_calls()
     async def tool_calls(ev: AgentPayload[Chunk]) -> None:
+        if _is_subagent(ev):
+            return
         if isinstance(ev.payload.content, list):
             for call in ev.payload.content:
                 tui.append_tool_call(call.name, call.arguments, agent_id=ev.agent_id, path=ev.path)
 
     @app.on_tool_result()
     async def tool_result(ev: AgentPayload[ToolMessage]) -> None:
+        if _is_subagent(ev):
+            return
         tm = ev.payload
         if not isinstance(tm, ToolMessage):
             tm = tm.content if isinstance(getattr(tm, 'content', None), ToolMessage) else None
@@ -65,17 +77,21 @@ async def connect_agent_event_to_tui(app: AgentApp, tui: AgentTUI):
 
     @app.on_error()
     async def error(ev: AgentPayload[Chunk]) -> None:
+        if _is_subagent(ev):
+            return
         tui.append_error(str(ev.payload.content), agent_id=ev.agent_id, path=ev.path)
 
     @app.on_message()
     async def message(ev: AgentPayload[Message]) -> None:
+        if _is_subagent(ev):
+            return
         if isinstance(ev.payload, UserMessage):
             tui.set_user_message_id(ev.payload.id, ev.agent_id, ev.path)
         tui.close_agent_message(ev.agent_id, ev.path)
 
     @app.on_plan()
     async def plan(ev: AgentPayload[list[PlanItem]]) -> None:
-        if ev.path or ':' not in ev.agent_id:
+        if _is_subagent(ev) or ':' not in ev.agent_id:
             return
         tui.show_plan(ev.payload, ev.agent_id, ev.path)
 
@@ -112,6 +128,7 @@ async def _main() -> None:
 
 def main():
     asyncio.run(_main())
+
 
 if __name__ == '__main__':
     main()
