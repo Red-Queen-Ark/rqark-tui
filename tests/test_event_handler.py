@@ -18,11 +18,7 @@ from rqark_tui.tui.event_handler import EventHandler
 
 
 def make_providers() -> list[Provider]:
-    return [
-        Provider('model-a', 'key-a', 'https://a.example', 0),
-        Provider('model-b', 'key-b', 'https://b.example', 1),
-        Provider('model-c', 'key-c', 'https://c.example', 2),
-    ]
+    return [Provider('model-a', 'key-a', 'https://a.example', 0), Provider('model-b', 'key-b', 'https://b.example', 1), Provider('model-c', 'key-c', 'https://c.example', 2)]
 
 
 @dataclass
@@ -220,24 +216,12 @@ class FakeApp:
         return session
 
 
-def build(
-    session_id: str | None = None,
-    pick_result: Entry | None = None,
-    agents: tuple[str, ...] = ('agent-a', 'agent-b'),
-    key: str = 'session-1',
-) -> tuple[EventHandler, FakeApp, FakeTUI, FakeConfigManager, AgentManager]:
+def build(session_id: str | None = None, pick_result: Entry | None = None, agents: tuple[str, ...] = ('agent-a', 'agent-b'), key: str = 'session-1') -> tuple[EventHandler, FakeApp, FakeTUI, FakeConfigManager, AgentManager]:
     app = FakeApp()
     tui = FakeTUI(pick_result, key)
     agent_mgr = AgentManager(cast('object', [StubAgent(name) for name in agents]))
     config_mgr = FakeConfigManager()
-    handler = EventHandler(
-        cast(AgentApp, app),
-        cast(AgentTUI, tui),
-        agent_mgr,
-        cast(ConfigManager, config_mgr),
-        session_id,
-        key,
-    )
+    handler = EventHandler(cast(AgentApp, app), cast(AgentTUI, tui), agent_mgr, cast(ConfigManager, config_mgr), session_id, key)
     return handler, app, tui, config_mgr, agent_mgr
 
 

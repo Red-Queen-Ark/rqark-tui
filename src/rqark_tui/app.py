@@ -14,6 +14,8 @@ from rqark_core.types.tool import PlanItem
 from rqark_tui.tui import AgentTUI, Restored
 from rqark_tui.tui.event_handler import EventHandler
 
+SESSION_SOURCE = 'TUI'
+
 
 async def restored_sessions(config_mgr: ConfigManager, session_mgr: SessionManager) -> list[Restored]:
     """The sessions this directory remembers, most recently used first.
@@ -32,12 +34,13 @@ async def restored_sessions(config_mgr: ConfigManager, session_mgr: SessionManag
 
 
 def load_agent_manager(config_mgr: ConfigManager) -> AgentManager:
-    """Agents the user configured in ``~/.rqark/agents/*.yml``.
+    """Agents the user configured in ``~/.rqark/agents/*.yml``, or the cloud catalogue.
 
     The built-in presets in ``rqark_app.config.default`` only seed that directory on
-    first run; once it holds files, the files win.
+    first run; once it holds files, the files win. The default agent the cloud holds
+    for this app's source starts out selected.
     """
-    return AgentManager(config_mgr.agents)
+    return AgentManager(config_mgr.agents, config_mgr.default_agent)
 
 
 def _is_subagent(ev: AgentPayload) -> bool:
@@ -101,14 +104,14 @@ async def connect_agent_event_to_tui(app: AgentApp, tui: AgentTUI):
 
 
 async def _main() -> None:
-    config_mgr = ConfigManager(str(Path.home() / '.rqark'))
+    config_mgr = ConfigManager(str(Path.home() / '.rqark'), source=SESSION_SOURCE)
     await config_mgr.load()
     agent_mgr = load_agent_manager(config_mgr)
 
     if config_mgr.cloud_client is not None:
-        storage = CloudStorage(config_mgr.cloud_client, source='TUI')
+        storage = CloudStorage(config_mgr.cloud_client, source=SESSION_SOURCE)
     else:
-        storage = JSONLStorage(config_mgr.config_path / 'sessions' / 'tui')
+        storage = JSONLStorage(config_mgr.config_path / 'sessions' / SESSION_SOURCE.lower())
 
     app = AgentApp(config_mgr.providers, storage)
     await app.session_mgr.load()

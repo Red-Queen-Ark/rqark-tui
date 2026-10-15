@@ -20,15 +20,7 @@ class EventHandler:
     the session this handler was built for.
     """
 
-    def __init__(
-        self,
-        app: AgentApp,
-        tui: AgentTUI,
-        agent_mgr: AgentManager,
-        config_mgr: ConfigManager,
-        session_id: str | None,
-        key: str = '',
-    ) -> None:
+    def __init__(self, app: AgentApp, tui: AgentTUI, agent_mgr: AgentManager, config_mgr: ConfigManager, session_id: str | None, key: str = '') -> None:
         self.app = app
         self.tui = tui
         self.agent_mgr = agent_mgr
