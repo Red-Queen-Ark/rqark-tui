@@ -18,11 +18,7 @@ from rqark_tui.tui.event_handler import EventHandler
 
 
 def make_providers() -> list[Provider]:
-    return [
-        Provider('model-a', 'key-a', 'https://a.example', 0),
-        Provider('model-b', 'key-b', 'https://b.example', 1),
-        Provider('model-c', 'key-c', 'https://c.example', 2),
-    ]
+    return [Provider('model-a', 'key-a', 'https://a.example', 0), Provider('model-b', 'key-b', 'https://b.example', 1), Provider('model-c', 'key-c', 'https://c.example', 2)]
 
 
 @dataclass
@@ -111,21 +107,6 @@ class FakeConfigManager:
     def __init__(self) -> None:
         self.cwd_hash = 'cwd-hash'
         self.dir_cache = FakeDirCache()
-        self.set_defaults: list[object] = []
-        self.cleared_defaults = 0
-        self.default_agent: object | None = None
-        self.had_default = True
-
-    async def set_default_agent(self, agent: object) -> None:
-        self.set_defaults.append(agent)
-        self.default_agent = agent
-
-    async def clear_default_agent(self) -> bool:
-        self.cleared_defaults += 1
-        if not self.had_default:
-            return False
-        self.default_agent = None
-        return True
 
 
 class StubAgent:
@@ -235,24 +216,12 @@ class FakeApp:
         return session
 
 
-def build(
-    session_id: str | None = None,
-    pick_result: Entry | None = None,
-    agents: tuple[str, ...] = ('agent-a', 'agent-b'),
-    key: str = 'session-1',
-) -> tuple[EventHandler, FakeApp, FakeTUI, FakeConfigManager, AgentManager]:
+def build(session_id: str | None = None, pick_result: Entry | None = None, agents: tuple[str, ...] = ('agent-a', 'agent-b'), key: str = 'session-1') -> tuple[EventHandler, FakeApp, FakeTUI, FakeConfigManager, AgentManager]:
     app = FakeApp()
     tui = FakeTUI(pick_result, key)
     agent_mgr = AgentManager(cast('object', [StubAgent(name) for name in agents]))
     config_mgr = FakeConfigManager()
-    handler = EventHandler(
-        cast(AgentApp, app),
-        cast(AgentTUI, tui),
-        agent_mgr,
-        cast(ConfigManager, config_mgr),
-        session_id,
-        key,
-    )
+    handler = EventHandler(cast(AgentApp, app), cast(AgentTUI, tui), agent_mgr, cast(ConfigManager, config_mgr), session_id, key)
     return handler, app, tui, config_mgr, agent_mgr
 
 
@@ -552,45 +521,6 @@ async def test_agents_without_any_agent_reports_it():
 async def test_unknown_command_reports_the_name():
     handler, _app, _tui, _config, _agents = build()
     assert await handler.command('/nope') == 'Unknown command: /nope'
-
-
-async def test_default_stores_the_current_agent():
-    handler, _app, _tui, config, agent_mgr = build(pick_result=('label', '1'))
-    await handler.command('/agents')
-
-    assert await handler.command('/default') == 'Default agent: agent-b'
-    assert config.set_defaults == [agent_mgr.agent]
-    assert config.cleared_defaults == 0
-
-
-async def test_default_without_any_agent_reports_it():
-    handler, _app, _tui, config, _agents = build(agents=())
-
-    assert await handler.command('/default') == 'No agents available'
-    assert config.set_defaults == []
-
-
-async def test_default_clear_drops_the_stored_agent():
-    handler, _app, _tui, config, _agents = build()
-
-    assert await handler.command('/default clear') == 'Default agent cleared'
-    assert config.cleared_defaults == 1
-    assert config.set_defaults == []
-
-
-async def test_default_clear_reports_when_there_was_none():
-    handler, _app, _tui, config, _agents = build()
-    config.had_default = False
-
-    assert await handler.command('/default clear') == 'No default agent'
-
-
-async def test_default_rejects_another_argument():
-    handler, _app, _tui, config, _agents = build()
-
-    assert await handler.command('/default nope') == 'Unknown argument: nope'
-    assert config.set_defaults == []
-    assert config.cleared_defaults == 0
 
 
 async def test_unknown_command_keeps_the_session():

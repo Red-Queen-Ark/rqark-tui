@@ -8,7 +8,7 @@
 
 - 串流式聊天：reasoning、Markdown 內容、tool call 與 tool result 即時顯示
 - agent 由 `~/.rqark/agents/*.yml` 定義（人格、prompt、工具），首次執行會用內建三個預設（Angel Holiday、Diana、Wednesday）填入該目錄；可在執行中用 `/agents` 切換
-- 預設 agent 記在 `rqark-data-cloud`（每個用戶每個 source 一個）：`/default` 將目前 agent 存為此 app 開場用的預設，`/default clear` 取消；開場時自動讀回並選中（需已設定 `cloud.yml`）
+- 預設 agent 記在 `rqark-data-cloud`（每個用戶每個 source 一個）：有設定 `cloud.yml` 時開場自動讀回並選中它；改預設請用 `rqark-data-cloud-web-ui` 的 Agent Defaults 頁
 - 每個專案目錄獨立 session：`~/.rqark/dir_caches.json` 記錄專案目錄 → session 對應，在同一專案重開即恢復上次對話
 - 多 provider 設定（依 `priority` 排序），API 連續失敗 3 次自動 failover；`app.chat` 無限重試為設計行為，context 超長時自動摘要壓縮後續跑
 - Thinking 區塊與 tool result 預設收合，可按 `▶` / `▼` 展開
@@ -74,7 +74,7 @@ tools:
 
 改完 `agents/*.yml` 要重開程式才生效；`/agents` 只會在已載入的 agent 之間切換。因為 YAML 直接存到本機，內含 token 的 agent 檔建議 `chmod 600`（`~/.rqark` 本身不在任何 repo 內）。
 
-預設 agent 不存本機檔案，而是記在 `rqark-data-cloud`，key 為 app 的 source（本程式用 `TUI`，同一套值亦蓋在 session 上）。有設定 `cloud.yml` 時，開場會讀回該 source 的預設 agent 並選中它；`/default` 寫入、`/default clear` 刪除。agent 本身被刪或不再公用時，該預設會一併消失，開場就照 `agents/*.yml` 的次序用第一個。
+預設 agent 不存本機檔案，而是記在 `rqark-data-cloud`，key 為 app 的 source（本程式用 `TUI`，同一套值亦蓋在 session 上）。有設定 `cloud.yml` 時，開場會讀回該 source 的預設 agent 並選中它；本程式**只讀不寫**，改預設請到 `rqark-data-cloud-web-ui` 的 Agent Defaults 頁（或直接用 `PUT /api/agent-defaults/{source}`）。agent 本身被刪或不再公用時，該預設會一併消失，開場就照 `agents/*.yml` 的次序用第一個。
 
 `providers.yml` 範例：
 
@@ -150,8 +150,7 @@ rqark-tui
 | `/new` | 開一條新 session（同點 `+` 一樣） |
 | `/stop` | 停止目前回應（已收到的部分內容會存下） |
 | `/models` | 切換 model（picker 顯示目前可用 provider） |
-| `/agents` | 切換 agent |
-| `/default` | 將目前 agent 設為此 app 的預設 agent（`/default clear` 取消；需已設定 `cloud.yml`） |
+| `/agents` | 切換 agent（只影響目前 session；預設 agent 請在 `rqark-data-cloud-web-ui` 改） |
 
 回應進行中會擋下一般訊息（顯示 "Still processing — please wait"），但斜線指令不受限制，`/stop` 即逃生門。
 
