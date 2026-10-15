@@ -183,8 +183,24 @@ class EventHandler:
                 if entry is None:
                     return None
                 return self._switch_agent(int(entry[1]))
+            case '/default':
+                return await self._default_agent(arg)
             case _:
                 return f'Unknown command: {name}'
+
+    async def _default_agent(self, arg: str) -> str:
+        """Store the agent this app starts with in the cloud, or drop it with 'clear'."""
+        if arg == 'clear':
+            if await self.config_mgr.clear_default_agent():
+                return 'Default agent cleared'
+            return 'No default agent'
+        if arg:
+            return f'Unknown argument: {arg}'
+        if not self.agent_mgr.agents:
+            return 'No agents available'
+        agent = self.agent_mgr.agent
+        await self.config_mgr.set_default_agent(agent)
+        return f'Default agent: {agent.name}'
 
     def _switch_model(self, index: int) -> str:
         manager = self.app.provider_mgr

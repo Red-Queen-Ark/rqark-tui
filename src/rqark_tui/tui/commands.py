@@ -6,6 +6,7 @@ COMMANDS: tuple[tuple[str, str], ...] = (
     ('/stop', 'Stop the current response'),
     ('/models', 'Switch model'),
     ('/agents', 'Switch agent'),
+    ('/default', 'Set or clear the default agent'),
 )
 
 

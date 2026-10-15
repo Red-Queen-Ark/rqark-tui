@@ -168,7 +168,7 @@ async def test_slash_prefix_opens_the_command_popup():
         chat.text = '/'
         await pilot.pause()
         assert popup.display is True
-        assert [entry[1] for entry in popup._entries] == ['/clear', '/close', '/compact', '/new', '/stop', '/models', '/agents']
+        assert [entry[1] for entry in popup._entries] == ['/clear', '/close', '/compact', '/new', '/stop', '/models', '/agents', '/default']
         assert chat.popup_active is True
 
 

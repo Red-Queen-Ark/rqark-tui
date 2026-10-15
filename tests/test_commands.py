@@ -4,7 +4,7 @@ from rqark_tui.tui.commands import COMMANDS, slash_entries
 
 
 def test_commands_table_is_complete():
-    assert [name for name, _ in COMMANDS] == ['/clear', '/close', '/compact', '/new', '/stop', '/models', '/agents']
+    assert [name for name, _ in COMMANDS] == ['/clear', '/close', '/compact', '/new', '/stop', '/models', '/agents', '/default']
 
 
 @pytest.mark.parametrize('name,description', COMMANDS)
@@ -27,6 +27,7 @@ def test_labels_are_padded_for_alignment():
 def test_prefix_filters_commands():
     assert [value for _label, value in slash_entries('/m')] == ['/models']
     assert [value for _label, value in slash_entries('/a')] == ['/agents']
+    assert [value for _label, value in slash_entries('/d')] == ['/default']
 
 
 def test_unknown_prefix_returns_nothing():
