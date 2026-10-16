@@ -1,14 +1,14 @@
 [project]
 name = "rqark-tui"
-version = "0.3.11"
+version = "0.3.12"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
     "textual>=8.2.8",
     "wcwidth>=0.8.3",
-    "rqark-app==0.4.0",
-    "rqark-core==0.2.12",
+    "rqark-app==0.4.1",
+    "rqark-core==0.2.13",
 ]
 
 [project.scripts]
