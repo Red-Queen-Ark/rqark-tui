@@ -277,7 +277,7 @@ class AgentTUI(QuitHandler, App):
             self.close_session(session.key)
 
     def on_message_pane_revert_requested(self, event: MessagePane.RevertRequested) -> None:
-        """``[revert]`` clicked: confirm, then trim the session back to that message."""
+        """``[revert]`` clicked: confirm, then drop that user message and everything after it."""
         session = self._session_for_pane(event.control)
         if session is None or session.handler is None:
             return
@@ -290,7 +290,7 @@ class AgentTUI(QuitHandler, App):
         message_id = event.message_id
         self.push_screen(
             YesNoDialog(
-                'Revert to this message? Everything after it will be removed.',
+                'Revert to this message? It and everything after it will be removed.',
                 title='Revert?',
                 yes_label='Revert',
                 no_label='Cancel',
@@ -306,7 +306,7 @@ class AgentTUI(QuitHandler, App):
         return None
 
     def _revert_confirmed(self, session: ChatSession, message_id: str, confirmed: bool | None) -> None:
-        """Dialog dismissal: only a yes trims the session."""
+        """Dialog dismissal: only a yes drops the message and everything after it."""
         self._focus_input()
         if not confirmed:
             return

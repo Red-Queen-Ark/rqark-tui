@@ -140,11 +140,12 @@ class MessagePane(RichLog):
     Each message gets a header row (``User`` / ``Agent <name>`` / ``System``)
     with the timestamp and a ``[copy]`` button right-aligned, followed by the
     body. User messages also carry a ``[revert]`` button just left of ``[copy]``
-    (once more than one user turn exists), which asks the app to trim the session
-    back to that message. Agent blocks are labelled with the emitting agent (the
-    agent name for the main agent, a short id for a subagent) so both are told
-    apart. Reasoning and tool results render as collapsible accordions (expanded
-    by default). Mouse selection / Ctrl+C / Ctrl+A copy behaviour is preserved.
+    (once more than one user turn exists), which asks the app to drop that user
+    message and everything after it. Agent blocks are labelled with the emitting
+    agent (the agent name for the main agent, a short id for a subagent) so both
+    are told apart. Reasoning and tool results render as collapsible accordions
+    (expanded by default). Mouse selection / Ctrl+C / Ctrl+A copy behaviour is
+    preserved.
 
     Streaming deltas only mutate the block model; the widget re-renders at most
     once per ``FLUSH_INTERVAL_SECONDS`` (see :meth:`_mark_dirty`), so a long
@@ -520,9 +521,9 @@ class MessagePane(RichLog):
     def _revertible(self, block: _Block) -> bool:
         """True when ``block`` is a revertible user message.
 
-        The app can only trim back to a user message, and refuses when it is the
-        session's only one — so the button only appears once a second user turn
-        exists and the app has handed the block its message id.
+        The app can only drop from a user message downwards, and refuses when it
+        is the session's only one — so the button only appears once a second user
+        turn exists and the app has handed the block its message id.
         """
         if block.kind != 'user' or not block.message_id:
             return False

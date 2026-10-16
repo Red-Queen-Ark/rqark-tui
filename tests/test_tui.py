@@ -574,7 +574,7 @@ def revert_ready_tui(bridge: StubBridge) -> AgentTUI:
     return tui
 
 
-async def test_revert_request_confirms_then_trims_the_session():
+async def test_revert_request_confirms_then_drops_the_target_message():
     reverted = Session(uuid='s1', history=[UserMessage('first', id='m1')])
     bridge = StubBridge(reverted=reverted)
     tui = revert_ready_tui(bridge)
