@@ -597,7 +597,7 @@ async def test_closing_without_a_session_forgets_nothing():
     assert config.dir_cache.forgotten == []
 
 
-async def test_revert_trims_the_session_to_a_user_message():
+async def test_revert_drops_the_target_user_message_and_everything_after_it():
     handler, app, _tui, _config, _agents = build()
     session = await app.session_mgr.create()
     handler.session_id = session.uuid
@@ -606,7 +606,7 @@ async def test_revert_trims_the_session_to_a_user_message():
     reverted = await handler.revert(first.id)
     assert reverted is session
     assert app.session_mgr.reverted == [(session.uuid, first.id)]
-    assert session.history == [first]
+    assert session.history == []
     assert app.session_mgr.saved == [session.uuid]
 
 
@@ -618,6 +618,18 @@ async def test_revert_returns_none_when_the_message_is_not_a_user_turn():
     answer = AssistantMessage('answer')
     session.history = [first, answer, UserMessage('second')]
     assert await handler.revert(answer.id) is None
+
+
+async def test_revert_keeps_the_user_turns_before_the_target():
+    handler, app, _tui, _config, _agents = build()
+    session = await app.session_mgr.create()
+    handler.session_id = session.uuid
+    first, second = UserMessage('first'), UserMessage('second')
+    answer = AssistantMessage('answer')
+    session.history = [first, answer, second]
+    reverted = await handler.revert(second.id)
+    assert reverted is session
+    assert session.history == [first, answer]
 
 
 async def test_revert_without_a_session_returns_none():
