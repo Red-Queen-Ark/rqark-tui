@@ -23,13 +23,7 @@ _SELECTION_BG = '#2E5E8C'
 #: Sentinel column meaning "to the end of the line" (used for select-all).
 _END_OF_LINE = 10**9
 
-_LABEL_COLORS = {
-    'user': '#DC143C',
-    'agent': '#A020F0',
-    'tools': '#A020F0',
-    'system': '#808080',
-    'status': '#4FC1FF',
-}
+_LABEL_COLORS = {'user': '#DC143C', 'agent': '#A020F0', 'tools': '#A020F0', 'system': '#808080', 'status': '#4FC1FF'}
 
 _ACCENT = '#4FC1FF'
 
@@ -122,14 +116,10 @@ def _apply_selection_style(strip: Strip, start: int, end: int) -> Strip:
             # Selected middle part (+ non-selected right part if any).
             if overlap_end < seg_end:
                 mid, right = segment.split_cells(overlap_end - overlap_start)
-                segments.append(
-                    Segment(mid.text, (mid.style or Style()) + selection_style, mid.control)
-                )
+                segments.append(Segment(mid.text, (mid.style or Style()) + selection_style, mid.control))
                 segments.append(right)
             else:
-                segments.append(
-                    Segment(segment.text, selected, segment.control)
-                )
+                segments.append(Segment(segment.text, selected, segment.control))
         col = seg_end
     return Strip(segments, strip.cell_length)
 
@@ -258,18 +248,14 @@ class MessagePane(RichLog):
             self._rewrite_tail(index)
             return
 
-    def append_agent_delta(
-        self, text: str, at: datetime | None = None, agent_id: str = '', path: tuple[str, ...] = ()
-    ) -> None:
+    def append_agent_delta(self, text: str, at: datetime | None = None, agent_id: str = '', path: tuple[str, ...] = ()) -> None:
         idx, block = self._open_agent(at, agent_id, path)
         if not block.sections or block.sections[-1].mode != 'body':
             block.sections.append(_Section('body', '', ''))
         block.sections[-1].text += _content_text(text)
         self._mark_dirty(idx)
 
-    def append_think_delta(
-        self, text: str, at: datetime | None = None, agent_id: str = '', path: tuple[str, ...] = ()
-    ) -> None:
+    def append_think_delta(self, text: str, at: datetime | None = None, agent_id: str = '', path: tuple[str, ...] = ()) -> None:
         idx, block = self._open_agent(at, agent_id, path)
         if block.sections and block.sections[0].mode == 'think':
             block.sections[0].text += _content_text(text)
@@ -281,14 +267,7 @@ class MessagePane(RichLog):
         self._close_agent(_agent_label(agent_id, path))
         self._flush_now()
 
-    def append_tool_call(
-        self,
-        name: str,
-        arguments: str = '',
-        at: datetime | None = None,
-        agent_id: str = '',
-        path: tuple[str, ...] = (),
-    ) -> None:
+    def append_tool_call(self, name: str, arguments: str = '', at: datetime | None = None, agent_id: str = '', path: tuple[str, ...] = ()) -> None:
         self._flush_now()
         agent = _agent_label(agent_id, path)
         if self._blocks and self._blocks[-1].kind == 'tools' and self._blocks[-1].open and self._blocks[-1].agent == agent:
@@ -302,14 +281,7 @@ class MessagePane(RichLog):
         block.sections.append(_Section('tool', name, arguments))
         self._rewrite_tail(idx)
 
-    def append_tool_result(
-        self,
-        name: str,
-        content: str,
-        at: datetime | None = None,
-        agent_id: str = '',
-        path: tuple[str, ...] = (),
-    ) -> None:
+    def append_tool_result(self, name: str, content: str, at: datetime | None = None, agent_id: str = '', path: tuple[str, ...] = ()) -> None:
         self._flush_now()
         agent = _agent_label(agent_id, path)
         if self._blocks and self._blocks[-1].kind == 'tools' and self._blocks[-1].agent == agent:
@@ -365,9 +337,7 @@ class MessagePane(RichLog):
 
     # --- block bookkeeping --------------------------------------------------
 
-    def _new_block(
-        self, kind: str, at: datetime | None, sections: list[tuple[str, str, str]], agent: str = '', message_id: str = ''
-    ) -> _Block:
+    def _new_block(self, kind: str, at: datetime | None, sections: list[tuple[str, str, str]], agent: str = '', message_id: str = '') -> _Block:
         block = _Block(kind, self._format_time(at), agent, message_id=message_id)
         for mode, name, text in sections:
             block.sections.append(_Section(mode, name, text))
@@ -397,9 +367,7 @@ class MessagePane(RichLog):
             return index, block
         return None
 
-    def _open_agent(
-        self, at: datetime | None, agent_id: str = '', path: tuple[str, ...] = ()
-    ) -> tuple[int, _Block]:
+    def _open_agent(self, at: datetime | None, agent_id: str = '', path: tuple[str, ...] = ()) -> tuple[int, _Block]:
         agent = _agent_label(agent_id, path)
         last = self._last_agent(agent)
         if last is not None:
@@ -433,7 +401,7 @@ class MessagePane(RichLog):
             return
         pinned = self._pinned_to_tail()
         self._dirty_index = None
-        del self.lines[self._blocks[idx].start:]
+        del self.lines[self._blocks[idx].start :]
         self._line_cache.clear()
         self._widest_line_width = max((line.cell_length for line in self.lines), default=0)
         del self._message_spans[idx:]
@@ -646,12 +614,7 @@ class MessagePane(RichLog):
                 return index
         return None
 
-    def _column_range(
-        self,
-        row: int,
-        start: tuple[int, int],
-        end: tuple[int, int],
-    ) -> tuple[int, int]:
+    def _column_range(self, row: int, start: tuple[int, int], end: tuple[int, int]) -> tuple[int, int]:
         """Return the selected column range ``(start, end)`` for ``row``.
 
         For a multi-row selection, the first and last rows are clipped at the

@@ -359,13 +359,7 @@ async def test_subagent_stream_does_not_merge_into_the_main_agent_block():
         pane.append_agent_delta('sub ', agent_id=SUB_AGENT, path=(MAIN_AGENT,))
         pane.append_tool_result('subagent', 'done', agent_id=MAIN_AGENT)
         pane.append_agent_delta('resumed', agent_id=MAIN_AGENT)
-        assert [(block.kind, block.agent) for block in pane._blocks] == [
-            ('agent', 'angel-holiday'),
-            ('tools', 'angel-holiday'),
-            ('agent', '0f8a1c2d'),
-            ('tools', 'angel-holiday'),
-            ('agent', 'angel-holiday'),
-        ]
+        assert [(block.kind, block.agent) for block in pane._blocks] == [('agent', 'angel-holiday'), ('tools', 'angel-holiday'), ('agent', '0f8a1c2d'), ('tools', 'angel-holiday'), ('agent', 'angel-holiday')]
         assert pane._blocks[0].sections[-1].text == 'main '
         assert pane._blocks[2].sections[-1].text == 'sub '
         assert pane._blocks[4].sections[-1].text == 'resumed'
@@ -386,27 +380,13 @@ async def test_interleaved_subagent_streams_keep_one_block_each():
         pane.append_agent_delta('d', agent_id=other_sub, path=(MAIN_AGENT,))
         pane.close_agent_message(SUB_AGENT, (MAIN_AGENT,))
         pane.close_agent_message(other_sub, (MAIN_AGENT,))
-        assert [(block.kind, block.agent) for block in pane._blocks] == [
-            ('agent', 'angel-holiday'),
-            ('tools', 'angel-holiday'),
-            ('agent', '0f8a1c2d'),
-            ('agent', '1a2b3c4d'),
-            ('tools', '0f8a1c2d'),
-            ('agent', '0f8a1c2d'),
-        ]
+        assert [(block.kind, block.agent) for block in pane._blocks] == [('agent', 'angel-holiday'), ('tools', 'angel-holiday'), ('agent', '0f8a1c2d'), ('agent', '1a2b3c4d'), ('tools', '0f8a1c2d'), ('agent', '0f8a1c2d')]
         assert pane._blocks[2].sections[-1].text == 'a0 a1 a2 a3 '
         assert pane._blocks[3].sections[-1].text == 'b0 b1 b2 b3 d'
         assert pane._blocks[5].sections[-1].text == 'c'
         assert len(pane._message_spans) == len(pane._blocks)
         headers = [line.text for line in pane.lines if line.text.startswith('Agent')]
-        assert [header.split()[2] for header in headers] == [
-            'angel-holiday',
-            'angel-holiday',
-            '0f8a1c2d',
-            '1a2b3c4d',
-            '0f8a1c2d',
-            '0f8a1c2d',
-        ]
+        assert [header.split()[2] for header in headers] == ['angel-holiday', 'angel-holiday', '0f8a1c2d', '1a2b3c4d', '0f8a1c2d', '0f8a1c2d']
 
 
 async def test_tool_display_falls_back_to_raw_arguments_on_bad_json():
@@ -511,16 +491,7 @@ async def test_format_time_localises_aware_timestamps():
 
 @pytest.mark.parametrize(
     ('text', 'start', 'end', 'expected'),
-    [
-        ('abcdef', 0, 6, 'abcdef'),
-        ('abcdef', 2, 4, 'cd'),
-        ('abcdef', 4, 2, ''),
-        ('abcdef', 0, 99, 'abcdef'),
-        ('abcdef', 99, 100, ''),
-        ('你好世界', 0, 4, '你好'),
-        ('你好世界', 2, 6, '好世'),
-        ('你好世界', 0, 3, '你'),
-    ],
+    [('abcdef', 0, 6, 'abcdef'), ('abcdef', 2, 4, 'cd'), ('abcdef', 4, 2, ''), ('abcdef', 0, 99, 'abcdef'), ('abcdef', 99, 100, ''), ('你好世界', 0, 4, '你好'), ('你好世界', 2, 6, '好世'), ('你好世界', 0, 3, '你')],
 )
 def test_crop_plain_slices_by_cell_width(text, start, end, expected):
     assert _crop_plain(text, start, end) == expected
@@ -889,7 +860,7 @@ async def test_revert_button_sits_left_of_copy_in_orange_on_a_user_message():
         pane.append_message('second', message_id='m2')
         head = pane._header_row(pane._blocks[0], 0)
         assert head.plain.index('[revert]') < head.plain.index('[copy]')
-        revert_span = next(span for span in head.spans if 'revert' in head.plain[span.start:span.end])
+        revert_span = next(span for span in head.spans if 'revert' in head.plain[span.start : span.end])
         assert revert_span.style.color == Color.parse(main_module._REVERT)
         assert revert_span.style.meta['@click'] == 'revert_message(0)'
 

@@ -181,7 +181,7 @@ class ChatInput(TextArea):
             return '', None, False
         if at_index > 0 and before[at_index - 1] not in ' \t\n':
             return '', None, False
-        rest = before[at_index + 1:]
+        rest = before[at_index + 1 :]
         attach = rest.startswith('!')
         if attach:
             rest = rest[1:]

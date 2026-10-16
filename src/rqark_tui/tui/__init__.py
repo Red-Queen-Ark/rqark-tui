@@ -48,24 +48,9 @@ class AgentTUI(QuitHandler, App):
     AUTO_FOCUS = 'ChatInput'
 
     async def run(
-        self,
-        *,
-        headless: bool = False,
-        inline: bool = False,
-        inline_no_clear: bool = False,
-        mouse: bool = True,
-        size: tuple[int, int] | None = None,
-        auto_pilot: AutopilotCallbackType | None = None,
-        loop: AbstractEventLoop | None = None,
+        self, *, headless: bool = False, inline: bool = False, inline_no_clear: bool = False, mouse: bool = True, size: tuple[int, int] | None = None, auto_pilot: AutopilotCallbackType | None = None, loop: AbstractEventLoop | None = None
     ) -> None:
-        await super().run_async(
-            headless=headless,
-            inline=inline,
-            inline_no_clear=inline_no_clear,
-            mouse=mouse,
-            size=size,
-            auto_pilot=auto_pilot,
-        )
+        await super().run_async(headless=headless, inline=inline, inline_no_clear=inline_no_clear, mouse=mouse, size=size, auto_pilot=auto_pilot)
 
     def __init__(self) -> None:
         super().__init__()
@@ -236,10 +221,7 @@ class AgentTUI(QuitHandler, App):
         if self._dialog_open:
             return
         self._focus_input()
-        self.push_screen(
-            YesNoDialog(f'Close {session.label} and delete its conversation?', title='Close session?', yes_label='Close', no_label='Cancel', default_yes=False),
-            lambda confirmed: self._close_confirmed(key, confirmed),
-        )
+        self.push_screen(YesNoDialog(f'Close {session.label} and delete its conversation?', title='Close session?', yes_label='Close', no_label='Cancel', default_yes=False), lambda confirmed: self._close_confirmed(key, confirmed))
 
     @property
     def _dialog_open(self) -> bool:
@@ -289,13 +271,7 @@ class AgentTUI(QuitHandler, App):
         self._focus_input()
         message_id = event.message_id
         self.push_screen(
-            YesNoDialog(
-                'Revert to this message? It and everything after it will be removed.',
-                title='Revert?',
-                yes_label='Revert',
-                no_label='Cancel',
-                default_yes=False,
-            ),
+            YesNoDialog('Revert to this message? It and everything after it will be removed.', title='Revert?', yes_label='Revert', no_label='Cancel', default_yes=False),
             lambda confirmed: self._revert_confirmed(session, message_id, confirmed),
         )
 
@@ -546,12 +522,7 @@ class AgentTUI(QuitHandler, App):
             return
         session.busy = True
         self.query_one(SessionTabs).set_busy(session.key, True)
-        session.worker = self.run_worker(
-            self._run_chat(session, text, images),
-            name=f'chat-{session.key}',
-            group='agent',
-            exit_on_error=False,
-        )
+        session.worker = self.run_worker(self._run_chat(session, text, images), name=f'chat-{session.key}', group='agent', exit_on_error=False)
 
     async def _run_chat(self, session: ChatSession, text: str, images: list[str]) -> None:
         handler = session.handler

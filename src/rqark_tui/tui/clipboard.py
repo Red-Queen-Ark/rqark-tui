@@ -23,10 +23,7 @@ def write_system_clipboard(text: str) -> None:
         command = ['clip']
     else:
         command = None
-        for candidate in (
-            ['xclip', '-selection', 'clipboard'],
-            ['xsel', '--clipboard', '--input'],
-        ):
+        for candidate in (['xclip', '-selection', 'clipboard'], ['xsel', '--clipboard', '--input']):
             if shutil.which(candidate[0]):
                 command = candidate
                 break
@@ -34,5 +31,5 @@ def write_system_clipboard(text: str) -> None:
         return
     try:
         subprocess.run(command, input=text.encode('utf-8'), check=True)
-    except (OSError, subprocess.SubprocessError):
+    except OSError, subprocess.SubprocessError:
         pass
