@@ -7,6 +7,7 @@ from rqark_app.agent.manager import AgentManager
 from rqark_app.app import AgentApp
 from rqark_app.config.manager import ConfigManager
 from rqark_app.provider.manager import ProviderManager
+from rqark_app.tools.context import AGENT_KEY, CLIENT_KEY, SOURCE_KEY
 from rqark_app.types.session import Session, SummaryMessage
 from rqark_core.types.chat import AssistantMessage, Chunk, Message, ToolMessage, UserMessage
 from rqark_core.types.event import AgentPayload
@@ -104,14 +105,17 @@ class FakeDirCache:
 
 
 class FakeConfigManager:
-    def __init__(self) -> None:
+    def __init__(self, cloud_client: object | None = None, source: str = 'TUI') -> None:
         self.cwd_hash = 'cwd-hash'
         self.dir_cache = FakeDirCache()
+        self.cloud_client = cloud_client
+        self.source = source
 
 
 class StubAgent:
-    def __init__(self, name: str) -> None:
+    def __init__(self, name: str, agent_id: str = '') -> None:
         self.name = name
+        self.id = agent_id
 
 
 class FakeTUI:
@@ -199,8 +203,8 @@ class FakeApp:
         handler = self.handlers['content']
         await handler(cast(AgentPayload[Chunk], FakePayload(FakeChunk(text), 'agent-a:session-1', path)))
 
-    async def chat(self, text: str, agent, session_id: str | None = None, images: list[str] | None = None) -> Session:
-        self.chat_calls.append({'text': text, 'agent': agent, 'session_id': session_id, 'images': images})
+    async def chat(self, text: str, agent, session_id: str | None = None, images: list[str] | None = None, extras: dict | None = None) -> Session:
+        self.chat_calls.append({'text': text, 'agent': agent, 'session_id': session_id, 'images': images, 'extras': extras})
         session = await self.session_mgr.get(session_id) if session_id is not None else None
         if session is None:
             session = await self.session_mgr.create()
@@ -721,3 +725,30 @@ async def test_compact_with_a_missing_session_reports_nothing():
     handler, app, _tui, _config, _agents = build(session_id='missing')
     assert await handler.command('/compact') == 'Nothing to compact'
     assert app.compactor.calls == []
+
+
+async def test_chat_hands_the_cloud_connection_to_the_turn():
+    app = FakeApp()
+    tui = FakeTUI()
+    agent_mgr = AgentManager(cast('object', [StubAgent('agent-a', 'agent-1')]))
+    client = object()
+    config_mgr = FakeConfigManager(cloud_client=client)
+    handler = EventHandler(cast(AgentApp, app), cast(AgentTUI, tui), agent_mgr, cast(ConfigManager, config_mgr), None, 'session-1')
+    await handler.chat('hello')
+    assert app.chat_calls[0]['extras'] == {CLIENT_KEY: client, AGENT_KEY: 'agent-1', SOURCE_KEY: 'TUI'}
+
+
+async def test_chat_without_a_cloud_connection_hands_no_extras():
+    handler, app, _tui, _config, _agents = build()
+    await handler.chat('hello')
+    assert app.chat_calls[0]['extras'] is None
+
+
+async def test_chat_without_a_cloud_agent_id_hands_no_extras():
+    app = FakeApp()
+    tui = FakeTUI()
+    agent_mgr = AgentManager(cast('object', [StubAgent('agent-a')]))
+    config_mgr = FakeConfigManager(cloud_client=object())
+    handler = EventHandler(cast(AgentApp, app), cast(AgentTUI, tui), agent_mgr, cast(ConfigManager, config_mgr), None, 'session-1')
+    await handler.chat('hello')
+    assert app.chat_calls[0]['extras'] is None

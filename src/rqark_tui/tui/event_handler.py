@@ -5,6 +5,7 @@ from rqark_app.agent.manager import AgentManager
 from rqark_app.app import AgentApp
 from rqark_app.compact import compact_messages
 from rqark_app.config.manager import ConfigManager
+from rqark_app.tools.context import AGENT_KEY, CLIENT_KEY, SOURCE_KEY
 from rqark_app.types.session import Session
 from rqark_core.types.chat import AssistantMessage, Chunk, UserMessage
 from rqark_core.types.event import AgentPayload
@@ -53,6 +54,14 @@ class EventHandler:
             return False
         return self.key == '' or self.tui.session_key(ev.agent_id, ev.path) == self.key
 
+    def _extras(self) -> dict[str, object] | None:
+        """The cloud connection the tools and prompts of this turn read."""
+        client = self.config_mgr.cloud_client
+        agent_id = self.agent_mgr.agent.id
+        if client is None or not agent_id:
+            return None
+        return {CLIENT_KEY: client, AGENT_KEY: agent_id, SOURCE_KEY: self.config_mgr.source}
+
     async def gen_title(self, session_uuid: str, first_message: str) -> None:
         titled = await self.app.chat_helper.gen_title(session_uuid, first_message)
         if titled is not None and titled.title:
@@ -70,7 +79,7 @@ class EventHandler:
                 session = await self.app.session_mgr.create()
                 self.session_id = session.uuid
                 self.tui.bind_session(self.key, session.uuid)
-            session = await self.app.chat(text, self.agent_mgr.agent, session_id=self.session_id, images=images)
+            session = await self.app.chat(text, self.agent_mgr.agent, session_id=self.session_id, images=images, extras=self._extras())
             self.session_id = session.uuid
             self.config_mgr.dir_cache.set_session_id(self.config_mgr.cwd_hash, self.session_id)
             if not session.title and text:
