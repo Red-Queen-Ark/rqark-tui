@@ -5,6 +5,7 @@ from rqark_app.agent.manager import AgentManager
 from rqark_app.app import AgentApp
 from rqark_app.compact import compact_messages
 from rqark_app.config.manager import ConfigManager
+from rqark_app.sop.expand import expand
 from rqark_app.tools.context import AGENT_KEY, CLIENT_KEY, SOURCE_KEY
 from rqark_app.types.session import Session
 from rqark_core.types.chat import AssistantMessage, Chunk, UserMessage
@@ -185,7 +186,19 @@ class EventHandler:
                     return None
                 return self._switch_agent(int(entry[1]))
             case _:
-                return f'Unknown command: {name}'
+                expanded = await self._expand_sop(command)
+                if expanded is None:
+                    return f'Unknown command: {name}'
+                await self.chat(expanded)
+                return None
+
+    async def _expand_sop(self, command: str) -> str | None:
+        """Rewrite a '/slug args' message with the SOP body, or None when no SOP carries it."""
+        manager = getattr(self.config_mgr, 'sop_manager', None)
+        if manager is None:
+            return None
+        expanded = expand(command, await manager.list())
+        return expanded[0] if expanded is not None else None
 
     def _switch_model(self, index: int) -> str:
         manager = self.app.provider_mgr

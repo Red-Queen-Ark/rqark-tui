@@ -4,6 +4,7 @@ from asyncio import AbstractEventLoop
 from collections.abc import Callable, Sequence
 from datetime import datetime
 
+from rqark_app.sop.types import Sop
 from rqark_app.types.session import SummaryMessage
 from rqark_core.types.chat import AssistantMessage, Message, SystemMessage, ToolMessage, UserMessage
 from rqark_core.types.tool import BaseTool, PlanItem
@@ -58,6 +59,7 @@ class AgentTUI(QuitHandler, App):
         self._model_name = ''
         self._cloud = False
         self._tool_keys: dict[str, str] = {}
+        self._sops: list[Sop] = []
         self._sessions: dict[str, ChatSession] = {}
         self._keys_by_uuid: dict[str, str] = {}
         self._active_key: str | None = None
@@ -69,6 +71,15 @@ class AgentTUI(QuitHandler, App):
         self._tool_keys = {tool.name: tool.display_key for tool in tools}
         for session in self._sessions.values():
             session.pane.set_tool_keys(self._tool_keys)
+
+    def set_sops(self, sops: Sequence[Sop]) -> None:
+        """Set the user-written SOPs the slash popup offers beside the built-in commands."""
+        self._sops = list(sops)
+
+    @property
+    def sops(self) -> list[Sop]:
+        """The SOPs the slash popup offers; empty until they are loaded."""
+        return self._sops
 
     def set_session_factory(self, factory: SessionFactory) -> None:
         """Set how a new tab gets its bridge to the agent app."""

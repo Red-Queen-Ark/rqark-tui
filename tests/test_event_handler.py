@@ -7,6 +7,7 @@ from rqark_app.agent.manager import AgentManager
 from rqark_app.app import AgentApp
 from rqark_app.config.manager import ConfigManager
 from rqark_app.provider.manager import ProviderManager
+from rqark_app.sop.types import LOCAL_SOURCE, Sop
 from rqark_app.tools.context import AGENT_KEY, CLIENT_KEY, SOURCE_KEY
 from rqark_app.types.session import Session, SummaryMessage
 from rqark_core.types.chat import AssistantMessage, Chunk, Message, ToolMessage, UserMessage
@@ -104,12 +105,21 @@ class FakeDirCache:
         self.forgotten.append((cwd_hash, session_id))
 
 
+class FakeSopManager:
+    def __init__(self, sops: list[Sop] | None = None) -> None:
+        self.sops = sops or []
+
+    async def list(self) -> list[Sop]:
+        return self.sops
+
+
 class FakeConfigManager:
-    def __init__(self, cloud_client: object | None = None, source: str = 'TUI') -> None:
+    def __init__(self, cloud_client: object | None = None, source: str = 'TUI', sops: list[Sop] | None = None) -> None:
         self.cwd_hash = 'cwd-hash'
         self.dir_cache = FakeDirCache()
         self.cloud_client = cloud_client
         self.source = source
+        self.sop_manager = FakeSopManager(sops)
 
 
 class StubAgent:
@@ -220,11 +230,13 @@ class FakeApp:
         return session
 
 
-def build(session_id: str | None = None, pick_result: Entry | None = None, agents: tuple[str, ...] = ('agent-a', 'agent-b'), key: str = 'session-1') -> tuple[EventHandler, FakeApp, FakeTUI, FakeConfigManager, AgentManager]:
+def build(
+    session_id: str | None = None, pick_result: Entry | None = None, agents: tuple[str, ...] = ('agent-a', 'agent-b'), key: str = 'session-1', sops: list[Sop] | None = None
+) -> tuple[EventHandler, FakeApp, FakeTUI, FakeConfigManager, AgentManager]:
     app = FakeApp()
     tui = FakeTUI(pick_result, key)
     agent_mgr = AgentManager(cast('object', [StubAgent(name) for name in agents]))
-    config_mgr = FakeConfigManager()
+    config_mgr = FakeConfigManager(sops=sops)
     handler = EventHandler(cast(AgentApp, app), cast(AgentTUI, tui), agent_mgr, cast(ConfigManager, config_mgr), session_id, key)
     return handler, app, tui, config_mgr, agent_mgr
 
@@ -534,6 +546,30 @@ async def test_unknown_command_keeps_the_session():
     await handler.command('/nope')
     assert handler.session_id == session.uuid
     assert app.session_mgr.deleted == []
+
+
+async def test_a_sop_command_is_sent_as_the_rewritten_message():
+    sop = Sop('trip-itinerary', 'Trip itinerary', '# Trip itinerary\n\nPlan it.', LOCAL_SOURCE)
+    handler, app, _tui, _config, _agents = build(sops=[sop])
+
+    assert await handler.command('/trip-itinerary 幫我安排大阪行程') is None
+    assert [call['text'] for call in app.chat_calls] == ['#trip-itinerary 幫我安排大阪行程\n\n# Trip itinerary\n\nPlan it.']
+
+
+async def test_a_sop_command_without_arguments_still_expands():
+    sop = Sop('trip', 'Trip', '# Trip', LOCAL_SOURCE)
+    handler, app, _tui, _config, _agents = build(sops=[sop])
+
+    assert await handler.command('/trip') is None
+    assert [call['text'] for call in app.chat_calls] == ['#trip\n\n# Trip']
+
+
+async def test_a_built_in_command_wins_over_a_sop_of_the_same_name():
+    sop = Sop('clear', 'Clear', '# Clear the log', LOCAL_SOURCE)
+    handler, app, _tui, _config, _agents = build(sops=[sop])
+
+    assert await handler.command('/clear') == 'Conversation cleared'
+    assert app.chat_calls == []
 
 
 async def test_command_name_without_arguments_still_matches():

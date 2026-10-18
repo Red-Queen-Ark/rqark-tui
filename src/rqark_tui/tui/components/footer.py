@@ -196,7 +196,7 @@ class ChatInput(TextArea):
         if self._pick_done is not None:
             return
         if self.document.line_count == 1 and self.text.startswith('/'):
-            popup.show(slash_entries(self.text))
+            popup.show(slash_entries(self.text, getattr(self.app, 'sops', ())))
             return
         prefix, at_index, _attach = self._file_prefix()
         if at_index is not None:

@@ -1,4 +1,5 @@
 import pytest
+from rqark_app.sop.types import Sop
 
 from rqark_tui.tui.commands import COMMANDS, slash_entries
 
@@ -40,3 +41,29 @@ def test_text_without_a_leading_slash_returns_nothing():
 
 def test_match_is_case_sensitive():
     assert slash_entries('/C') == []
+
+
+def sop(slug: str = 'trip-itinerary', title: str = 'Trip itinerary') -> Sop:
+    from rqark_app.sop.types import LOCAL_SOURCE
+
+    return Sop(slug, title, '# Trip itinerary', LOCAL_SOURCE)
+
+
+def test_sops_are_listed_after_the_built_in_commands():
+    entries = slash_entries('/', [sop()])
+    assert [value for _label, value in entries] == [name for name, _ in COMMANDS] + ['/trip-itinerary']
+
+
+def test_a_sop_label_carries_its_title():
+    label, value = slash_entries('/trip', [sop()])[0]
+    assert value == '/trip-itinerary'
+    assert label == '/trip-itineraryTrip itinerary'
+
+
+def test_a_sop_prefix_filters_its_entry():
+    assert slash_entries('/trip', [sop()])[-1][1] == '/trip-itinerary'
+    assert slash_entries('/tripx', [sop()]) == []
+
+
+def test_a_built_in_command_wins_a_name_clash():
+    assert [value for _label, value in slash_entries('/clear', [sop('clear', 'Clear')])] == ['/clear']

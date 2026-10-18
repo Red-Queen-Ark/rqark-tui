@@ -121,6 +121,7 @@ async def _main() -> None:
     tui.set_agent_name(agent_mgr.agent.name)
     tui.set_model_name(app.provider_mgr.provider.name)
     tui.set_tools(agent_mgr.agent.tools)
+    tui.set_sops(await config_mgr.sop_manager.list())
     tui.set_session_factory(lambda key, session_id: EventHandler(app, tui, agent_mgr, config_mgr, session_id, key))
 
     await connect_agent_event_to_tui(app, tui)
