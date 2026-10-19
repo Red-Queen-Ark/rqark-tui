@@ -30,6 +30,7 @@ class EventHandler:
         self.session_id = session_id
         self.key = key
         self._title_tasks: set[asyncio.Task] = set()
+        self._memory_tasks: set[asyncio.Task] = set()
         self._stream_active = False
         self._stop_requested = False
         self._last_chat_text = ''
@@ -80,13 +81,15 @@ class EventHandler:
                 session = await self.app.session_mgr.create()
                 self.session_id = session.uuid
                 self.tui.bind_session(self.key, session.uuid)
-            session = await self.app.chat(text, self.agent_mgr.agent, session_id=self.session_id, images=images, extras=self._extras())
+            extras = self._extras()
+            session = await self.app.chat(text, self.agent_mgr.agent, session_id=self.session_id, images=images, extras=extras)
             self.session_id = session.uuid
             self.config_mgr.dir_cache.set_session_id(self.config_mgr.cwd_hash, self.session_id)
             if not session.title and text:
                 task = asyncio.create_task(self.gen_title(session.uuid, text))
                 self._title_tasks.add(task)
                 task.add_done_callback(self._title_tasks.discard)
+            self._record_turn(session, extras)
         except asyncio.CancelledError:
             if self._stop_requested:
                 await self._save_partial()
@@ -94,6 +97,17 @@ class EventHandler:
             raise
         finally:
             self._stream_active = False
+
+    def _record_turn(self, session: Session, extras: dict[str, object] | None) -> None:
+        """Record the finished turn in the background, in the same source as its tools.
+
+        The task is held on the handler so it cannot be collected mid-flight, and
+        the app tracks it too: quitting drains what is still running instead of
+        dropping the last answer's memory with the event loop.
+        """
+        task = asyncio.create_task(self.app.write_turn_memory(session_id=session.uuid, source=self.config_mgr.source, session=session, extras=extras))
+        self._memory_tasks.add(task)
+        task.add_done_callback(self._memory_tasks.discard)
 
     async def _save_partial(self) -> None:
         content = self._stream_content

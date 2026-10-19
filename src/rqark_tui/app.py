@@ -128,6 +128,7 @@ async def _main() -> None:
 
     tui.open_sessions(await restored_sessions(config_mgr, app.session_mgr))
     await tui.run()
+    await app.drain_memory_writes()
 
 
 def main():

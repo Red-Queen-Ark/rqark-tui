@@ -3,6 +3,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import cast
 
+import pytest
 from rqark_app.agent.manager import AgentManager
 from rqark_app.app import AgentApp
 from rqark_app.config.manager import ConfigManager
@@ -191,6 +192,10 @@ class FakeApp:
         self.chat_error: BaseException | None = None
         self.during_chat: Callable[[], Awaitable[None]] | None = None
         self.session: Session | None = None
+        self.turn_writes: list[dict] = []
+
+    async def write_turn_memory(self, *, session_id, source, session, extras=None, allow_state_update=True):
+        self.turn_writes.append({'session_id': session_id, 'source': source, 'session': session, 'extras': extras, 'allow_state_update': allow_state_update})
 
     def on_think(self):
         return self._register('think')
@@ -259,6 +264,66 @@ async def test_chat_binds_the_session_to_its_tab():
     handler, app, tui, _config, _agents = build()
     await handler.chat('hello')
     assert tui.bound == [('session-1', app.session.uuid)]
+
+
+async def test_a_finished_turn_is_recorded_with_the_configured_source():
+    handler, app, _tui, _config, _agents = build()
+    await handler.chat('hello')
+    assert app.turn_writes == []
+    await asyncio.sleep(0)
+
+    assert len(app.turn_writes) == 1
+    assert app.turn_writes[0]['session_id'] == handler.session_id
+    assert app.turn_writes[0]['source'] == 'TUI'
+    assert app.turn_writes[0]['allow_state_update'] is True
+
+
+async def test_the_recorded_source_follows_the_config():
+    handler, app, _tui, _config, _agents = build()
+    _config.source = 'MY_SOURCE'
+    await handler.chat('hello')
+    await asyncio.sleep(0)
+    assert app.turn_writes[0]['source'] == 'MY_SOURCE'
+
+
+async def test_without_a_cloud_the_turn_is_still_handed_over():
+    handler, app, _tui, _config, _agents = build()
+    app.turn_writes.clear()
+    await handler.chat('hello')
+    await asyncio.sleep(0)
+    assert app.turn_writes[0]['extras'] is None
+
+
+async def test_a_stopped_turn_is_not_recorded():
+    handler, app, _tui, _config, _agents = build()
+    session = await app.session_mgr.create()
+    handler.session_id = session.uuid
+    await stop_during_chat(handler, app)
+    await handler.chat('hello')
+    await asyncio.sleep(0)
+    assert app.turn_writes == []
+
+
+async def test_a_failed_turn_is_not_recorded():
+    handler, app, _tui, _config, _agents = build()
+    app.chat_error = RuntimeError('provider exploded')
+    with pytest.raises(RuntimeError):
+        await handler.chat('hello')
+    await asyncio.sleep(0)
+    assert app.turn_writes == []
+
+
+async def test_the_turn_is_recorded_with_the_source_its_tools_used():
+    handler, app, _tui, _config, _agents = build()
+    _config.cloud_client = object()
+    _agents.switch_to(0)
+    handler.agent_mgr.agent.id = 'agent-1'
+    await handler.chat('hello')
+    await asyncio.sleep(0)
+
+    extras = app.turn_writes[0]['extras']
+    assert extras is not None and extras['source'] == 'TUI'
+    assert app.chat_calls[0]['extras'] is extras
 
 
 async def test_stream_events_of_another_session_are_ignored():
