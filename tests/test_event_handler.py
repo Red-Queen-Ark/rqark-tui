@@ -21,7 +21,7 @@ from rqark_tui.tui.event_handler import EventHandler
 
 
 def make_providers() -> list[Provider]:
-    return [Provider('model-a', 'key-a', 'https://a.example', 0), Provider('model-b', 'key-b', 'https://b.example', 1), Provider('model-c', 'key-c', 'https://c.example', 2)]
+    return [Provider('model-a', 'https://a.example', 0, 'key-a'), Provider('model-b', 'https://b.example', 1, 'key-b'), Provider('model-c', 'https://c.example', 2, 'key-c')]
 
 
 @dataclass
