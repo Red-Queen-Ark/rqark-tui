@@ -136,6 +136,6 @@ async def test_main_agent_plan_reaches_the_tui():
 async def test_provider_switched_reaches_the_tui():
     app, tui = await bridge()
 
-    await app.handlers['provider_switched'](AgentPayload(ROOT, (), ProviderSwitch(Provider('model', 'key', 'https://example', 0), Provider('other', 'key', 'https://example', 0))))
+    await app.handlers['provider_switched'](AgentPayload(ROOT, (), ProviderSwitch(Provider('model', 'https://example', 0, 'key'), Provider('other', 'https://example', 0, 'key'))))
 
     assert [name for name, _, _ in tui.calls] == ['set_model_name']
