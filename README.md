@@ -2,7 +2,7 @@
 
 基於 [Textual](https://textual.textualize.io/) 的終端聊天客戶端，用於與 LLM 驅動的 coding agent 對話。
 
-`rqark-tui` 只是介面層，實際的聊天引擎（provider 管理、session 儲存、串流、重試）由 [`rqark-app`](https://gitea.carhyme.top/RedQueenArk) 提供。
+`rqark-tui` 只是介面層，實際的聊天引擎（provider 管理、session 儲存、串流、重試）由 [`rqark-app`](https://pypi.org/project/rqark-app/) 提供。
 
 ## 功能特色
 
@@ -21,22 +21,22 @@
 
 ## 安裝
 
-需要 Python ≥ 3.14。`rqark-tui` 及其依賴 `rqark-app`、`rqark-core` 只發布在私有 Gitea PyPI registry，安裝時需指定該 index：
+需要 Python ≥ 3.14。
 
 ```bash
-uv tool install rqark-tui --index https://gitea.carhyme.top/api/packages/RedQueenArk/pypi/simple
+uv tool install rqark-tui
 ```
 
 或加入專案：
 
 ```bash
-uv add rqark-tui --index https://gitea.carhyme.top/api/packages/RedQueenArk/pypi/simple
+uv add rqark-tui
 ```
 
-pip 亦可（`--extra-index-url`）：
+pip 亦可：
 
 ```bash
-pip install rqark-tui --extra-index-url https://gitea.carhyme.top/api/packages/RedQueenArk/pypi/simple
+pip install rqark-tui
 ```
 
 ## 設定
