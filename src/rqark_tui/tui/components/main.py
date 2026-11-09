@@ -4,12 +4,13 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 from rich.cells import cell_len
+from rich.console import RenderableType
 from rich.markdown import Markdown
 from rich.segment import Segment
 from rich.style import Style
 from rich.text import Text
 from textual import events
-from textual.geometry import Offset
+from textual.geometry import Offset, Size
 from textual.message import Message
 from textual.strip import Strip
 from textual.timer import Timer
@@ -62,6 +63,7 @@ class _Section:
     name: str
     text: str = ''
     collapsed: bool = False
+    rendered: tuple[int, str, list[Strip]] | None = field(default=None, compare=False, repr=False)
 
     def __post_init__(self) -> None:
         self.text = _content_text(self.text)
@@ -124,6 +126,15 @@ def _apply_selection_style(strip: Strip, start: int, end: int) -> Strip:
     return Strip(segments, strip.cell_length)
 
 
+class _Rendered:
+    """Strips already rendered at one width, appended to the log without re-rendering."""
+
+    __slots__ = ('strips',)
+
+    def __init__(self, strips: list[Strip]) -> None:
+        self.strips = strips
+
+
 class MessagePane(RichLog):
     """Scrollable message area showing the submitted messages.
 
@@ -143,6 +154,11 @@ class MessagePane(RichLog):
     """
 
     FLUSH_INTERVAL_SECONDS = 0.2
+
+    #: Quiet time after the last resize event before the transcript is re-wrapped.
+    #: A drag delivers a resize every cell, and re-wrapping the whole log on each
+    #: of them blocks the message loop for the length of the drag.
+    RESIZE_DEBOUNCE_SECONDS = 0.15
 
     DEFAULT_CSS = """
     MessagePane {
@@ -190,6 +206,7 @@ class MessagePane(RichLog):
         self._tool_keys: dict[str, str] = {}
         self._dirty_index: int | None = None
         self._flush_timer: Timer | None = None
+        self._resize_timer: Timer | None = None
         # The single transient status block (a running command's progress), if any.
         self._status: _Block | None = None
 
@@ -203,6 +220,9 @@ class MessagePane(RichLog):
         if self._flush_timer is not None:
             self._flush_timer.stop()
             self._flush_timer = None
+        if self._resize_timer is not None:
+            self._resize_timer.stop()
+            self._resize_timer = None
         self._dirty_index = None
         if self._mouse_captured:
             self._mouse_captured = False
@@ -210,6 +230,23 @@ class MessagePane(RichLog):
 
     def on_resize(self, event) -> None:
         super().on_resize(event)
+        if not self._size_known or not self._blocks:
+            return
+        if self.scrollable_content_region.width == self._wrap_width:
+            return
+        if self._wrap_width == 0:
+            # First layout: nothing is on screen yet, so paint it now.
+            self._rebuild()
+            return
+        # Re-wrap once the user stops dragging, not on every intermediate width:
+        # each re-wrap re-parses every block, which a drag would chain back to back.
+        if self._resize_timer is not None:
+            self._resize_timer.stop()
+        self._resize_timer = self.set_timer(self.RESIZE_DEBOUNCE_SECONDS, self._rewrap)
+
+    def _rewrap(self) -> None:
+        """Rebuild the transcript after a resize settles, if the width really changed."""
+        self._resize_timer = None
         if not self._size_known or not self._blocks:
             return
         if self.scrollable_content_region.width != self._wrap_width:
@@ -429,6 +466,87 @@ class MessagePane(RichLog):
             self.scroll_end(animate=False)
         self._clear_selection()
 
+    @staticmethod
+    def _stable_head(text: str) -> str:
+        """The part of a streaming body that no later chunk can change.
+
+        A body is only ever appended to, so everything up to the last blank line is
+        fixed and the paragraph after it is still growing. A blank line inside an
+        open code fence does not end a block, so such a split is walked back.
+        """
+        cut = text.rfind('\n\n')
+        while cut > 0:
+            head = text[: cut + 2]
+            if head.count('```') % 2 == 0:
+                return head
+            cut = text.rfind('\n\n', 0, cut)
+        return ''
+
+    @staticmethod
+    def _join_strips(base: list[Strip], extra: list[Strip], width: int) -> list[Strip]:
+        """Join two rendered chunks with exactly one blank line between them.
+
+        Each chunk is rendered on its own, so its outer blank lines are dropped and a
+        single separator is inserted instead; joining them as-is would stack whatever
+        spacing the renderer happened to leave at the seam.
+        """
+        while base and not base[-1].text.strip():
+            base.pop()
+        start = 0
+        while start < len(extra) and not extra[start].text.strip():
+            start += 1
+        extra = extra[start:]
+        if base and extra:
+            base.append(Strip.blank(width))
+        base.extend(extra)
+        return base
+
+    def _body_strips(self, section: _Section, width: int) -> list[Strip]:
+        """Render an agent body as cached finished blocks plus the paragraph still streaming.
+
+        Rendering every flush costs O(length) per tick, so a long answer would spend
+        more time in the renderer than streaming. Everything before the last completed
+        block is rendered to strips once per width and kept; each flush only renders
+        what is new since the previous one, plus the tail.
+        """
+        text = section.text
+        head = self._stable_head(text)
+        cached = section.rendered
+        if head:
+            if cached is not None and cached[0] == width and head.startswith(cached[1]):
+                base = list(cached[2])
+                addition = head[len(cached[1]) :]
+                if addition.strip():
+                    self._join_strips(base, self._render_strips(Markdown(addition), width), width)
+            else:
+                base = self._render_strips(Markdown(head), width)
+            section.rendered = (width, head, base)
+            strips = list(base)
+        else:
+            section.rendered = None
+            strips = []
+        tail = text[len(head) :]
+        if tail.strip():
+            self._join_strips(strips, self._render_strips(Markdown(tail), width), width)
+        return strips
+
+    def _render_strips(self, renderable: RenderableType, width: int) -> list[Strip]:
+        """Render ``renderable`` to strips padded to ``width``, as ``RichLog.write`` does."""
+        options = self.app.console.options.update_width(width)
+        lines = list(Segment.split_lines(self.app.console.render(renderable, options)))
+        if not lines:
+            return [Strip.blank(width)]
+        strips = Strip.from_lines(lines)
+        for strip in strips:
+            strip.adjust_cell_length(width)
+        return strips
+
+    def _write_strips(self, strips: list[Strip]) -> None:
+        """Append pre-rendered strips to the log, skipping the render ``write`` would do."""
+        self.lines.extend(strips)
+        self._widest_line_width = max(self._widest_line_width, max((strip.cell_length for strip in strips), default=0))
+        self.virtual_size = Size(self._widest_line_width, len(self.lines))
+
     def _emit_block(self, idx: int) -> None:
         block = self._blocks[idx]
         start = len(self.lines)
@@ -439,7 +557,10 @@ class MessagePane(RichLog):
             rows: list[object] = []
             if section.mode == 'body':
                 if section.text and block.kind == 'agent':
-                    rows.append(Markdown(section.text))
+                    if self._size_known:
+                        rows.append(_Rendered(self._body_strips(section, width)))
+                    else:
+                        rows.append(Markdown(section.text))
                 elif section.text:
                     rows.append(Text(section.text, style=Style(color='#ffffff')))
             elif section.mode == 'image':
@@ -463,7 +584,10 @@ class MessagePane(RichLog):
             elif section.text:
                 rows.append(Text(section.text, style=Style(dim=True, color='#c0c0c0')))
             for row in rows:
-                self.write(row, width=width, scroll_end=False)
+                if isinstance(row, _Rendered):
+                    self._write_strips(row.strips)
+                else:
+                    self.write(row, width=width, scroll_end=False)
         end = len(self.lines)
         if end > start:
             self._message_spans.append((start, end))

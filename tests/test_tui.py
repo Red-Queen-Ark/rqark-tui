@@ -639,3 +639,39 @@ async def test_revert_that_does_nothing_warns_and_keeps_the_pane():
         await pilot.pause(0.1)
         assert bridge.reverts == ['m1']
         assert [block.kind for block in pane._blocks] == ['user', 'user']
+
+
+async def test_streaming_body_only_renders_the_new_blocks():
+    tui = AgentTUI()
+    async with tui.run_test(size=(60, 40)) as pilot:
+        await pilot.pause()
+        pane = tui.pane
+        calls = []
+        original = pane._render_strips
+        pane._render_strips = lambda renderable, width: calls.append(renderable) or original(renderable, width)
+        for step in range(30):
+            pane.append_agent_delta(f'paragraph {step} has some **bold** text.\n\n')
+            pane._flush_now()
+        text = rendered_text(pane)
+        assert 'paragraph 0 ' in text and 'paragraph 29 ' in text
+        assert len(calls) < 70
+
+
+async def test_a_resize_drag_rebuilds_the_pane_once():
+    tui = AgentTUI()
+    async with tui.run_test(size=(80, 40)) as pilot:
+        await pilot.pause()
+        pane = tui.pane
+        for step in range(40):
+            pane.append_message(f'question {step}')
+            pane.append_agent_delta('answer with **bold** text\n\n')
+            pane.close_agent_message()
+        rebuilds = []
+        original = pane._rebuild
+        pane._rebuild = lambda: rebuilds.append(1) or original()
+        for width in range(80, 40, -1):
+            await pilot.resize_terminal(width, 40)
+        assert rebuilds == []
+        await pilot.pause(0.5)
+        assert len(rebuilds) == 1
+        assert 'question 39' in rendered_text(pane)
