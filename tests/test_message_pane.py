@@ -155,6 +155,40 @@ async def test_tool_result_flushes_pending_stream():
         assert 'streamed' in rendered_text(pane)
 
 
+async def test_tool_call_burst_appends_without_rewriting_the_block(monkeypatch):
+    calls = track_renders(monkeypatch)
+    async with PaneApp().run_test(size=(40, 100)) as pilot:
+        pane = pilot.app.query_one(MessagePane)
+        await pilot.pause()
+        calls.clear()
+        for i in range(20):
+            pane.append_tool_call('bash', f'{{"cmd": "ls {i}"}}')
+        assert calls == [0]
+        text = rendered_text(pane)
+        assert text.count('use tool bash') == 20
+        assert 'ls 19' in text
+        assert pane._message_spans[-1] == (pane._blocks[-1].start, len(pane.lines))
+
+
+async def test_tool_result_burst_appends_without_rewriting_the_block(monkeypatch):
+    calls = track_renders(monkeypatch)
+    async with PaneApp().run_test(size=(40, 100)) as pilot:
+        pane = pilot.app.query_one(MessagePane)
+        await pilot.pause()
+        pane.append_tool_call('bash', '{"cmd": "ls"}')
+        calls.clear()
+        for i in range(20):
+            pane.append_tool_result('bash', f'output {i}')
+        assert calls == []
+        assert rendered_text(pane).count('tool result: bash') == 20
+        assert 'output 19' in pane._copy_text(pane._blocks[0])
+        assert pane._message_spans[-1] == (pane._blocks[-1].start, len(pane.lines))
+        start, end = pane._message_spans[0]
+        pane._selection_start = (start, 0)
+        pane._selection_end = (end - 1, main_module._END_OF_LINE)
+        assert pane._selection_text() == pane._copy_text(pane._blocks[0])
+
+
 async def test_mark_dirty_keeps_the_earliest_pending_index():
     async with PaneApp().run_test(size=(40, 100)) as pilot:
         pane = pilot.app.query_one(MessagePane)
@@ -209,6 +243,21 @@ async def test_hide_status_takes_the_line_off_the_transcript():
         assert 'question' in rendered_text(pane)
 
 
+async def test_hide_status_keeps_blocks_appended_after_it():
+    async with PaneApp().run_test(size=(40, 100)) as pilot:
+        pane = pilot.app.query_one(MessagePane)
+        await pilot.pause()
+        pane.append_message('question')
+        pane.show_status('Compacting…')
+        pane.append_message('during')
+        pane.hide_status()
+        assert [block.kind for block in pane._blocks] == ['user', 'user']
+        text = rendered_text(pane)
+        assert 'during' in text
+        assert 'Compacting…' not in text
+        assert pane._message_spans[-1] == (pane._blocks[-1].start, len(pane.lines))
+
+
 async def test_hide_status_is_safe_without_a_status_or_after_a_clear():
     async with PaneApp().run_test(size=(40, 100)) as pilot:
         pane = pilot.app.query_one(MessagePane)
@@ -261,7 +310,6 @@ async def test_rebuild_resets_dirty_state_and_recomputes_spans():
         pane._rebuild()
         assert pane._dirty_index is None
         assert len(pane._message_spans) == len(pane._blocks)
-        assert len(pane._message_texts) == len(pane._blocks)
         assert 'two' in rendered_text(pane)
 
 
@@ -459,7 +507,7 @@ async def test_action_toggle_section_rewrites_the_last_block():
         assert 'reasoning text' not in rendered_text(pane)
 
 
-async def test_action_toggle_section_rebuilds_an_earlier_block():
+async def test_action_toggle_section_rewrites_an_earlier_block():
     async with PaneApp().run_test(size=(40, 100)) as pilot:
         pane = pilot.app.query_one(MessagePane)
         await pilot.pause()
@@ -470,6 +518,39 @@ async def test_action_toggle_section_rebuilds_an_earlier_block():
         assert pane._blocks[0].sections[0].collapsed is False
         assert 'reasoning text' in rendered_text(pane)
         assert 'later message' in rendered_text(pane)
+
+
+async def test_action_toggle_section_never_rebuilds_the_whole_log(monkeypatch):
+    monkeypatch.setattr(MessagePane, '_rebuild', lambda self: pytest.fail('full rebuild'))
+    async with PaneApp().run_test(size=(40, 100)) as pilot:
+        pane = pilot.app.query_one(MessagePane)
+        await pilot.pause()
+        pane.append_agent_delta('body')
+        pane.append_think_delta('reasoning text')
+        pane.append_message('later message')
+        pane.action_toggle_section(0, 0)
+        assert 'reasoning text' in rendered_text(pane)
+
+
+async def test_tool_arguments_are_parsed_once_per_section(monkeypatch):
+    parses: list[str] = []
+    original = main_module.json.loads
+
+    def counting_loads(text: str):
+        if text.startswith('{"cmd"'):
+            parses.append(text)
+        return original(text)
+
+    monkeypatch.setattr(main_module.json, 'loads', counting_loads)
+    async with PaneApp().run_test(size=(40, 100)) as pilot:
+        pane = pilot.app.query_one(MessagePane)
+        await pilot.pause()
+        pane.set_tool_keys({'bash': 'cmd'})
+        for i in range(5):
+            pane.append_tool_call('bash', f'{{"cmd": "ls {i}"}}')
+        pane.action_toggle_section(0, 0)
+        pane._rebuild()
+        assert len(parses) == 5
 
 
 async def test_action_toggle_section_ignores_out_of_range_indices():
@@ -544,7 +625,7 @@ async def test_select_all_returns_unwrapped_text_for_every_message():
         assert all(end - start > 1 for start, end in pane._message_spans)
         pane._selection_start = (0, 0)
         pane._selection_end = (len(pane.lines) - 1, main_module._END_OF_LINE)
-        assert pane._selection_text() == '\n'.join(pane._message_texts)
+        assert pane._selection_text() == '\n'.join(pane._copy_text(block) for block in pane._blocks)
 
 
 async def test_selection_ending_inside_a_message_crops_its_last_row():
@@ -798,7 +879,7 @@ async def test_user_message_with_content_parts_renders_its_text():
         pane.append_message([{'type': 'text', 'text': '@src/rqark_tui/tui/ 點解佢成日會整死我 vscode'}])
         assert '@src/rqark_tui/tui/ 點解佢成日會整死我 vscode' in rendered_text(pane).replace('\n', '')
         assert pane._blocks[0].sections[0].text == '@src/rqark_tui/tui/ 點解佢成日會整死我 vscode'
-        assert pane._message_texts[0].endswith('@src/rqark_tui/tui/ 點解佢成日會整死我 vscode')
+        assert pane._copy_text(pane._blocks[0]).endswith('@src/rqark_tui/tui/ 點解佢成日會整死我 vscode')
 
 
 async def test_streaming_delta_accepts_content_parts():
@@ -828,7 +909,7 @@ async def test_user_message_with_images_renders_placeholders():
         assert '[image 1]' in text
         assert '[image 2]' in text
         assert pane._blocks[0].sections[0].text == 'look at this'
-        assert pane._message_texts[0].endswith('[image 2]')
+        assert pane._copy_text(pane._blocks[0]).endswith('[image 2]')
 
 
 async def test_image_only_message_renders_without_a_body():

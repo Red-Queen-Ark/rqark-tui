@@ -64,6 +64,7 @@ class _Section:
     text: str = ''
     collapsed: bool = False
     rendered: tuple[int, str, list[Strip]] | None = field(default=None, compare=False, repr=False)
+    display: str | None = field(default=None, compare=False, repr=False)
 
     def __post_init__(self) -> None:
         self.text = _content_text(self.text)
@@ -191,11 +192,9 @@ class MessagePane(RichLog):
         # pane (no horizontal scrolling), which keeps them fully selectable
         # and copyable.
         super().__init__(wrap=True, min_width=1, **kwargs)
-        # Per appended message block: its row range in `self.lines` and the
-        # plain text used by the whole-message [copy] button / selection.
+        # Per appended message block: its row range in `self.lines`.
         self._blocks: list[_Block] = []
         self._message_spans: list[tuple[int, int]] = []
-        self._message_texts: list[str] = []
         # Selection state in virtual coordinates: (row, col) where row is the
         # line index in `self.lines` and col is the cell column (scroll-aware).
         self._selection_start: tuple[int, int] | None = None
@@ -212,6 +211,9 @@ class MessagePane(RichLog):
 
     def set_tool_keys(self, tool_keys: dict[str, str]) -> None:
         self._tool_keys = tool_keys
+        for block in self._blocks:
+            for section in block.sections:
+                section.display = None
 
     def on_mount(self) -> None:
         self._flush_timer = self.set_interval(self.FLUSH_INTERVAL_SECONDS, self._flush_now)
@@ -316,7 +318,7 @@ class MessagePane(RichLog):
             block = self._blocks[-1]
             idx = len(self._blocks) - 1
         block.sections.append(_Section('tool', name, arguments))
-        self._rewrite_tail(idx)
+        self._append_section_rows(idx)
 
     def append_tool_result(self, name: str, content: str, at: datetime | None = None, agent_id: str = '', path: tuple[str, ...] = ()) -> None:
         self._flush_now()
@@ -331,7 +333,7 @@ class MessagePane(RichLog):
             block = self._blocks[-1]
             idx = len(self._blocks) - 1
         block.sections.append(_Section('result', name or 'tool', content.strip(), collapsed=True))
-        self._rewrite_tail(idx)
+        self._append_section_rows(idx)
 
     def append_error(self, text: str, at: datetime | None = None) -> None:
         self._flush_now()
@@ -369,8 +371,9 @@ class MessagePane(RichLog):
         if status not in self._blocks:
             return
         self._flush_now()
+        idx = self._blocks.index(status)
         self._blocks.remove(status)
-        self._rebuild()
+        self._truncate_tail(status.start, idx)
 
     # --- block bookkeeping --------------------------------------------------
 
@@ -436,13 +439,15 @@ class MessagePane(RichLog):
     def _rewrite_tail(self, idx: int) -> None:
         if not self._size_known:
             return
+        self._truncate_tail(self._blocks[idx].start, idx)
+
+    def _truncate_tail(self, start: int, idx: int) -> None:
         pinned = self._pinned_to_tail()
         self._dirty_index = None
-        del self.lines[self._blocks[idx].start :]
+        del self.lines[start:]
         self._line_cache.clear()
         self._widest_line_width = max((line.cell_length for line in self.lines), default=0)
         del self._message_spans[idx:]
-        del self._message_texts[idx:]
         for index in range(idx, len(self._blocks)):
             self._blocks[index].start = len(self.lines)
             self._emit_block(index)
@@ -457,7 +462,6 @@ class MessagePane(RichLog):
         self._line_cache.clear()
         self._widest_line_width = 0
         self._message_spans.clear()
-        self._message_texts.clear()
         for idx in range(len(self._blocks)):
             block = self._blocks[idx]
             block.start = len(self.lines)
@@ -553,45 +557,67 @@ class MessagePane(RichLog):
         width = max(self.scrollable_content_region.width, 1)
         self._wrap_width = width
         self.write(self._header_row(block, idx), width=width, scroll_end=False)
-        for si, section in enumerate(block.sections):
-            rows: list[object] = []
-            if section.mode == 'body':
-                if section.text and block.kind == 'agent':
-                    if self._size_known:
-                        rows.append(_Rendered(self._body_strips(section, width)))
-                    else:
-                        rows.append(Markdown(section.text))
-                elif section.text:
-                    rows.append(Text(section.text, style=Style(color='#ffffff')))
-            elif section.mode == 'image':
-                rows.append(Text(section.text, style=Style(color=_ACCENT)))
-            elif section.mode == 'think':
-                rows.append(self._accordion_row(section, idx, si))
-                if not section.collapsed and section.text:
-                    rows.append(Text(section.text, style=Style(dim=True, italic=True, color='#9a9a9a')))
-            elif section.mode == 'tool':
-                rows.append(self._tool_row(section))
-            elif section.mode == 'result':
-                rows.append(self._accordion_row(section, idx, si, prefix='tool result: '))
-                if not section.collapsed and section.text:
-                    rows.append(Text(section.text, style=Style(dim=True, color='#9e9e9e')))
-            elif section.mode == 'error':
-                if section.text:
-                    rows.append(Text(section.text, style=Style(color='#DC143C')))
-            elif section.mode == 'status':
-                if section.text:
-                    rows.append(Text(section.text, style=Style(color=_ACCENT, italic=True)))
-            elif section.text:
-                rows.append(Text(section.text, style=Style(dim=True, color='#c0c0c0')))
-            for row in rows:
-                if isinstance(row, _Rendered):
-                    self._write_strips(row.strips)
-                else:
-                    self.write(row, width=width, scroll_end=False)
+        for si in range(len(block.sections)):
+            self._emit_rows(self._section_rows(block, idx, si, width), width)
         end = len(self.lines)
         if end > start:
             self._message_spans.append((start, end))
-            self._message_texts.append(self._copy_text(block))
+
+    def _append_section_rows(self, idx: int) -> None:
+        block = self._blocks[idx]
+        span = (block.start, len(self.lines))
+        if not self._size_known or idx != len(self._blocks) - 1 or not self._message_spans or self._message_spans[-1] != span:
+            self._rewrite_tail(idx)
+            return
+        pinned = self._pinned_to_tail()
+        width = max(self.scrollable_content_region.width, 1)
+        self._wrap_width = width
+        si = len(block.sections) - 1
+        self._emit_rows(self._section_rows(block, idx, si, width), width)
+        self._message_spans[-1] = (block.start, len(self.lines))
+        if pinned:
+            self.scroll_end(animate=False)
+        self._clear_selection()
+
+    def _section_rows(self, block: _Block, idx: int, si: int, width: int) -> list[object]:
+        section = block.sections[si]
+        rows: list[object] = []
+        if section.mode == 'body':
+            if section.text and block.kind == 'agent':
+                if self._size_known:
+                    rows.append(_Rendered(self._body_strips(section, width)))
+                else:
+                    rows.append(Markdown(section.text))
+            elif section.text:
+                rows.append(Text(section.text, style=Style(color='#ffffff')))
+        elif section.mode == 'image':
+            rows.append(Text(section.text, style=Style(color=_ACCENT)))
+        elif section.mode == 'think':
+            rows.append(self._accordion_row(section, idx, si))
+            if not section.collapsed and section.text:
+                rows.append(Text(section.text, style=Style(dim=True, italic=True, color='#9a9a9a')))
+        elif section.mode == 'tool':
+            rows.append(self._tool_row(section))
+        elif section.mode == 'result':
+            rows.append(self._accordion_row(section, idx, si, prefix='tool result: '))
+            if not section.collapsed and section.text:
+                rows.append(Text(section.text, style=Style(dim=True, color='#9e9e9e')))
+        elif section.mode == 'error':
+            if section.text:
+                rows.append(Text(section.text, style=Style(color='#DC143C')))
+        elif section.mode == 'status':
+            if section.text:
+                rows.append(Text(section.text, style=Style(color=_ACCENT, italic=True)))
+        elif section.text:
+            rows.append(Text(section.text, style=Style(dim=True, color='#c0c0c0')))
+        return rows
+
+    def _emit_rows(self, rows: list[object], width: int) -> None:
+        for row in rows:
+            if isinstance(row, _Rendered):
+                self._write_strips(row.strips)
+            else:
+                self.write(row, width=width, scroll_end=False)
 
     def _header_row(self, block: _Block, idx: int) -> Text:
         label = self._block_label(block)
@@ -630,24 +656,31 @@ class MessagePane(RichLog):
         return f'Agent - {block.agent}'
 
     def _tool_display(self, section: _Section) -> str:
-        key = self._tool_keys.get(section.name)
-        if key:
-            try:
-                data = json.loads(section.text or '{}')
-            except ValueError:
-                data = {}
-            if isinstance(data, dict) and data.get(key) is not None:
-                return str(data[key])
-        return section.text[:40] if section.text else ''
+        if section.display is None:
+            display: str | None = None
+            key = self._tool_keys.get(section.name)
+            if key:
+                try:
+                    data = json.loads(section.text or '{}')
+                except ValueError:
+                    data = {}
+                if isinstance(data, dict) and data.get(key) is not None:
+                    display = str(data[key])
+            section.display = display if display is not None else (section.text[:40] if section.text else '')
+        return section.display
+
+    def _section_copy(self, section: _Section) -> str:
+        if section.mode == 'tool':
+            display = self._tool_display(section)
+            return f'use tool {section.name}' + (f' {display}' if display else '')
+        return section.text
 
     def _copy_text(self, block: _Block) -> str:
         parts = [self._block_label(block)]
         for section in block.sections:
-            if section.mode == 'tool':
-                display = self._tool_display(section)
-                parts.append(f'use tool {section.name}' + (f' {display}' if display else ''))
-            elif section.text:
-                parts.append(section.text)
+            text = self._section_copy(section)
+            if text:
+                parts.append(text)
         return '\n'.join(parts)
 
     def _pad_to(self, width: int) -> int:
@@ -693,10 +726,7 @@ class MessagePane(RichLog):
             if 0 <= section_index < len(block.sections):
                 section = block.sections[section_index]
                 section.collapsed = not section.collapsed
-                if block_index == len(self._blocks) - 1:
-                    self._rewrite_tail(block_index)
-                else:
-                    self._rebuild()
+                self._rewrite_tail(block_index)
 
     def clear(self) -> 'MessagePane':
         """Clear the log and any active selection."""
@@ -704,7 +734,6 @@ class MessagePane(RichLog):
         self._status = None
         self._blocks.clear()
         self._message_spans.clear()
-        self._message_texts.clear()
         self._clear_selection()
         return super().clear()
 
@@ -787,7 +816,7 @@ class MessagePane(RichLog):
         while row <= last_row:
             span_index = self._span_for_row(row)
             if span_index is not None and self._fully_selected(span_index, start, end):
-                selected.append(self._message_texts[span_index])
+                selected.append(self._copy_text(self._blocks[span_index]))
                 row = self._message_spans[span_index][1]
                 continue
             text = self.lines[row].text if row < len(self.lines) else ''
