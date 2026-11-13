@@ -152,9 +152,22 @@ class MessagePane(RichLog):
     Streaming deltas only mutate the block model; the widget re-renders at most
     once per ``FLUSH_INTERVAL_SECONDS`` (see :meth:`_mark_dirty`), so a long
     stream costs O(text) renders instead of one full re-render per token.
+
+    Only a window of the transcript is mounted in ``self.lines``: the newest
+    ``TRANSCRIPT_MAX_ROWS`` rows. Blocks above the window live in ``_blocks``
+    only and are rendered again when the reader scrolls to the top, so the cost
+    of an append, a flush or a resize stays bounded by the window instead of
+    growing with the session.
     """
 
     FLUSH_INTERVAL_SECONDS = 0.2
+
+    #: Rows of transcript kept mounted. A block's height is only known once it
+    #: is rendered, so the window is trimmed and refilled block by block.
+    TRANSCRIPT_MAX_ROWS = 300
+
+    #: Rows added above the window each time the reader reaches its top.
+    TRANSCRIPT_BACKFILL_ROWS = 150
 
     #: Quiet time after the last resize event before the transcript is re-wrapped.
     #: A drag delivers a resize every cell, and re-wrapping the whole log on each
@@ -192,9 +205,17 @@ class MessagePane(RichLog):
         # pane (no horizontal scrolling), which keeps them fully selectable
         # and copyable.
         super().__init__(wrap=True, min_width=1, **kwargs)
-        # Per appended message block: its row range in `self.lines`.
+        # Per appended message block: its row range in `self.lines`, or `None`
+        # when the block sits above the mounted window.
         self._blocks: list[_Block] = []
-        self._message_spans: list[tuple[int, int]] = []
+        self._message_spans: list[tuple[int, int] | None] = []
+        # Index of the first block rendered into `self.lines`. Blocks before it
+        # only exist in the model and are re-rendered on demand.
+        self._mount_start = 0
+        self._mounted = False
+        self._backfilling = False
+        self._agent_index: dict[str, int] = {}
+        self._status_index: int | None = None
         # Selection state in virtual coordinates: (row, col) where row is the
         # line index in `self.lines` and col is the cell column (scroll-aware).
         self._selection_start: tuple[int, int] | None = None
@@ -354,26 +375,27 @@ class MessagePane(RichLog):
         never accumulates: re-showing rewrites the same block and
         :meth:`hide_status` takes it back off the transcript.
         """
-        if self._status is not None and self._status in self._blocks:
+        index = self._status_index
+        if self._status is not None and index is not None and index < len(self._blocks) and self._blocks[index] is self._status:
             self._status.sections[0].text = _content_text(text)
-            self._rewrite_tail(self._blocks.index(self._status))
+            self._rewrite_tail(index)
             return
         self._flush_now()
         self._close_last()
         self._status = self._new_block('status', None, [('status', '', text)])
+        self._status_index = len(self._blocks) - 1
         self._rewrite_tail(len(self._blocks) - 1)
 
     def hide_status(self) -> None:
         """Drop the transient status line, re-rendering the transcript without it."""
-        if self._status is None:
-            return
+        index = self._status_index
         status, self._status = self._status, None
-        if status not in self._blocks:
+        self._status_index = None
+        if status is None or index is None or index >= len(self._blocks) or self._blocks[index] is not status:
             return
         self._flush_now()
-        idx = self._blocks.index(status)
         self._blocks.remove(status)
-        self._truncate_tail(status.start, idx)
+        self._truncate_tail(status.start, index)
 
     # --- block bookkeeping --------------------------------------------------
 
@@ -383,6 +405,9 @@ class MessagePane(RichLog):
             block.sections.append(_Section(mode, name, text))
         block.start = len(self.lines)
         self._blocks.append(block)
+        self._message_spans.append(None)
+        if kind == 'agent':
+            self._agent_index[agent] = len(self._blocks) - 1
         return block
 
     def _close_last(self) -> None:
@@ -391,6 +416,12 @@ class MessagePane(RichLog):
 
     def _close_agent(self, agent: str) -> None:
         """Close ``agent``'s open text block, wherever it sits in the log."""
+        index = self._agent_index.pop(agent, None)
+        if index is not None and index < len(self._blocks):
+            block = self._blocks[index]
+            if block.kind == 'agent' and block.agent == agent and block.open:
+                block.open = False
+                return
         for block in reversed(self._blocks):
             if block.open and block.kind == 'agent' and block.agent == agent:
                 block.open = False
@@ -398,10 +429,18 @@ class MessagePane(RichLog):
 
     def _last_agent(self, agent: str) -> tuple[int, _Block] | None:
         """The newest open text block of ``agent``; concurrent agents each keep their own."""
+        index = self._agent_index.get(agent)
+        if index is not None and index < len(self._blocks):
+            block = self._blocks[index]
+            if block.kind == 'agent' and block.agent == agent:
+                if not block.open or any(s.mode == 'tool' for s in block.sections):
+                    return None
+                return index, block
         for index in range(len(self._blocks) - 1, -1, -1):
             block = self._blocks[index]
             if block.kind != 'agent' or block.agent != agent:
                 continue
+            self._agent_index[agent] = index
             if not block.open or any(s.mode == 'tool' for s in block.sections):
                 return None
             return index, block
@@ -439,9 +478,15 @@ class MessagePane(RichLog):
     def _rewrite_tail(self, idx: int) -> None:
         if not self._size_known:
             return
+        if idx < self._mount_start:
+            self._dirty_index = None
+            return
         self._truncate_tail(self._blocks[idx].start, idx)
 
     def _truncate_tail(self, start: int, idx: int) -> None:
+        if idx < self._mount_start:
+            self._dirty_index = None
+            return
         pinned = self._pinned_to_tail()
         self._dirty_index = None
         del self.lines[start:]
@@ -452,23 +497,135 @@ class MessagePane(RichLog):
             self._blocks[index].start = len(self.lines)
             self._emit_block(index)
         if pinned:
-            self.scroll_end(animate=False)
+            self.scroll_end(animate=False, immediate=True)
         self._clear_selection()
+        self._trim_top(pinned)
 
     def _rebuild(self) -> None:
+        """Re-render the mounted window at the current width."""
         pinned = self._pinned_to_tail()
         self._dirty_index = None
+        if not self._mounted:
+            self._mounted = True
+            self._mount_start = self._tail_start()
+        self._rewindow(pinned)
+
+    def _tail_start(self) -> int:
+        """Index of the oldest block that fits in the row budget, counting from the newest."""
+        width = max(self.scrollable_content_region.width, 1)
+        start = len(self._blocks)
+        rows = 0
+        while start > 0 and rows < self.TRANSCRIPT_MAX_ROWS:
+            start -= 1
+            rows += len(self._block_strips(start, width))
+        return start
+
+    def _rewindow(self, pinned: bool) -> None:
+        """Render blocks from ``_mount_start`` downwards into ``self.lines``."""
+        width = max(self.scrollable_content_region.width, 1)
+        self._wrap_width = width
         del self.lines[:]
         self._line_cache.clear()
         self._widest_line_width = 0
-        self._message_spans.clear()
-        for idx in range(len(self._blocks)):
-            block = self._blocks[idx]
-            block.start = len(self.lines)
-            self._emit_block(idx)
+        self._message_spans[:] = [None] * len(self._blocks)
+        for index in range(self._mount_start, len(self._blocks)):
+            self._blocks[index].start = len(self.lines)
+            self._emit_block(index)
+        self.virtual_size = Size(self._widest_line_width, len(self.lines))
         if pinned:
-            self.scroll_end(animate=False)
+            self.scroll_end(animate=False, immediate=True)
         self._clear_selection()
+
+    def _set_span(self, idx: int, span: tuple[int, int]) -> None:
+        while len(self._message_spans) <= idx:
+            self._message_spans.append(None)
+        self._message_spans[idx] = span
+
+    def _trim_top(self, pinned: bool) -> None:
+        """Drop the oldest mounted blocks once the window outgrows its row budget.
+
+        ``pinned`` is whether the view sat at the tail before the append that
+        brought the window over budget. Rows the reader can see are never
+        dropped: a scrolled-up view stops the trim at the top of its viewport,
+        so the text under it stays put.
+        """
+        if len(self.lines) <= self.TRANSCRIPT_MAX_ROWS:
+            return
+        floor = len(self.lines) if pinned else int(self.scroll_offset.y)
+        start = self._mount_start
+        dropped = 0
+        while start < len(self._blocks) - 1 and len(self.lines) - dropped > self.TRANSCRIPT_MAX_ROWS:
+            span = self._message_spans[start]
+            height = (span[1] - span[0]) if span is not None else 0
+            if dropped + height > floor:
+                break
+            dropped += height
+            self._message_spans[start] = None
+            self._blocks[start].start = -1
+            start += 1
+        if start == self._mount_start or dropped <= 0:
+            return
+        self._mount_start = start
+        del self.lines[:dropped]
+        for index in range(start, len(self._blocks)):
+            if self._blocks[index].start >= 0:
+                self._blocks[index].start -= dropped
+            span = self._message_spans[index]
+            if span is not None:
+                self._message_spans[index] = (span[0] - dropped, span[1] - dropped)
+        self._line_cache.clear()
+        self._widest_line_width = max((line.cell_length for line in self.lines), default=0)
+        self.virtual_size = Size(self._widest_line_width, len(self.lines))
+        if pinned:
+            self.scroll_end(animate=False, immediate=True)
+        else:
+            self.scroll_to(y=max(self.scroll_offset.y - dropped, 0), animate=False)
+        self._clear_selection()
+
+    def _backfill(self) -> None:
+        """Prepend older blocks above the window, keeping the read position fixed."""
+        if self._backfilling or self._mount_start == 0 or not self._size_known:
+            return
+        self._backfilling = True
+        try:
+            width = max(self.scrollable_content_region.width, 1)
+            start = self._mount_start
+            rows = 0
+            while start > 0 and rows < self.TRANSCRIPT_BACKFILL_ROWS:
+                start -= 1
+                rows += len(self._block_strips(start, width))
+            strips: list[Strip] = []
+            spans: list[tuple[int, int]] = []
+            for index in range(start, self._mount_start):
+                begin = len(strips)
+                strips.extend(self._block_strips(index, width))
+                spans.append((begin, len(strips)))
+            added = len(strips)
+            if not added:
+                self._mount_start = start
+                return
+            self.lines[0:0] = strips
+            for offset, index in enumerate(range(start, self._mount_start)):
+                self._blocks[index].start = spans[offset][0]
+                self._message_spans[index] = spans[offset]
+            for index in range(self._mount_start, len(self._blocks)):
+                if self._blocks[index].start >= 0:
+                    self._blocks[index].start += added
+                span = self._message_spans[index]
+                if span is not None:
+                    self._message_spans[index] = (span[0] + added, span[1] + added)
+            self._mount_start = start
+            self._line_cache.clear()
+            self.virtual_size = Size(self._widest_line_width, len(self.lines))
+            self.scroll_to(y=self.scroll_offset.y + added, animate=False)
+        finally:
+            self._backfilling = False
+
+    def watch_scroll_y(self, old_value: float, new_value: float) -> None:
+        """Load earlier history when the reader reaches the top of the window."""
+        super().watch_scroll_y(old_value, new_value)
+        if new_value <= 0:
+            self._backfill()
 
     @staticmethod
     def _stable_head(text: str) -> str:
@@ -551,17 +708,30 @@ class MessagePane(RichLog):
         self._widest_line_width = max(self._widest_line_width, max((strip.cell_length for strip in strips), default=0))
         self.virtual_size = Size(self._widest_line_width, len(self.lines))
 
+    def _block_strips(self, idx: int, width: int) -> list[Strip]:
+        """Render block ``idx`` to strips at ``width``, without touching ``self.lines``."""
+        block = self._blocks[idx]
+        strips: list[Strip] = []
+        self._collect_strips(self._header_row(block, idx), width, strips)
+        for si in range(len(block.sections)):
+            for row in self._section_rows(block, idx, si, width):
+                self._collect_strips(row, width, strips)
+        return strips
+
+    def _collect_strips(self, row: RenderableType | _Rendered, width: int, strips: list[Strip]) -> None:
+        if isinstance(row, _Rendered):
+            strips.extend(row.strips)
+        else:
+            strips.extend(self._render_strips(row, width))
+
     def _emit_block(self, idx: int) -> None:
         block = self._blocks[idx]
         start = len(self.lines)
         width = max(self.scrollable_content_region.width, 1)
         self._wrap_width = width
-        self.write(self._header_row(block, idx), width=width, scroll_end=False)
-        for si in range(len(block.sections)):
-            self._emit_rows(self._section_rows(block, idx, si, width), width)
-        end = len(self.lines)
-        if end > start:
-            self._message_spans.append((start, end))
+        self._write_strips(self._block_strips(idx, width))
+        block.start = start
+        self._set_span(idx, (start, len(self.lines)))
 
     def _append_section_rows(self, idx: int) -> None:
         block = self._blocks[idx]
@@ -574,14 +744,15 @@ class MessagePane(RichLog):
         self._wrap_width = width
         si = len(block.sections) - 1
         self._emit_rows(self._section_rows(block, idx, si, width), width)
-        self._message_spans[-1] = (block.start, len(self.lines))
+        self._set_span(idx, (block.start, len(self.lines)))
         if pinned:
-            self.scroll_end(animate=False)
+            self.scroll_end(animate=False, immediate=True)
         self._clear_selection()
+        self._trim_top(pinned)
 
-    def _section_rows(self, block: _Block, idx: int, si: int, width: int) -> list[object]:
+    def _section_rows(self, block: _Block, idx: int, si: int, width: int) -> list[RenderableType | _Rendered]:
         section = block.sections[si]
-        rows: list[object] = []
+        rows: list[RenderableType | _Rendered] = []
         if section.mode == 'body':
             if section.text and block.kind == 'agent':
                 if self._size_known:
@@ -612,7 +783,7 @@ class MessagePane(RichLog):
             rows.append(Text(section.text, style=Style(dim=True, color='#c0c0c0')))
         return rows
 
-    def _emit_rows(self, rows: list[object], width: int) -> None:
+    def _emit_rows(self, rows: list[RenderableType | _Rendered], width: int) -> None:
         for row in rows:
             if isinstance(row, _Rendered):
                 self._write_strips(row.strips)
@@ -732,8 +903,12 @@ class MessagePane(RichLog):
         """Clear the log and any active selection."""
         self._dirty_index = None
         self._status = None
+        self._status_index = None
+        self._agent_index.clear()
         self._blocks.clear()
         self._message_spans.clear()
+        self._mount_start = 0
+        self._mounted = False
         self._clear_selection()
         return super().clear()
 
@@ -762,8 +937,8 @@ class MessagePane(RichLog):
 
     def _span_for_row(self, row: int) -> int | None:
         """Return the index of the message whose rows contain ``row``, or ``None``."""
-        for index, (start, end) in enumerate(self._message_spans):
-            if start <= row < end:
+        for index, span in enumerate(self._message_spans):
+            if span is not None and span[0] <= row < span[1]:
                 return index
         return None
 
@@ -783,7 +958,10 @@ class MessagePane(RichLog):
 
     def _fully_selected(self, index: int, start: tuple[int, int], end: tuple[int, int]) -> bool:
         """True when every cell of the message at ``index`` lies inside the selection."""
-        span_start, span_end = self._message_spans[index]
+        span = self._message_spans[index]
+        if span is None:
+            return False
+        span_start, span_end = span
         if span_start < start[0] or span_end - 1 > end[0]:
             return False
         if span_start == start[0] and start[1] > 0:
@@ -817,7 +995,8 @@ class MessagePane(RichLog):
             span_index = self._span_for_row(row)
             if span_index is not None and self._fully_selected(span_index, start, end):
                 selected.append(self._copy_text(self._blocks[span_index]))
-                row = self._message_spans[span_index][1]
+                span = self._message_spans[span_index]
+                row = span[1] if span is not None else row + 1
                 continue
             text = self.lines[row].text if row < len(self.lines) else ''
             col_start, col_end = self._column_range(row, start, end)
