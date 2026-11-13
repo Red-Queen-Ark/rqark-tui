@@ -1083,3 +1083,128 @@ async def test_rebuild_from_a_resize_does_not_pull_a_scrolled_up_view_to_the_tai
         await pilot.resize_terminal(30, 20)
         await pilot.pause()
         assert pane.scroll_offset.y == 0
+
+
+@pytest.fixture
+def small_window(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(MessagePane, 'TRANSCRIPT_MAX_ROWS', 20)
+    monkeypatch.setattr(MessagePane, 'TRANSCRIPT_BACKFILL_ROWS', 10)
+
+
+def fill_long_pane(pane: MessagePane, count: int = 40) -> None:
+    for index in range(count):
+        pane.append_system(f'line {index}')
+
+
+async def test_a_long_transcript_mounts_only_the_newest_rows(small_window):
+    async with PaneApp().run_test(size=(40, 20)) as pilot:
+        pane = pilot.app.query_one(MessagePane)
+        await pilot.pause()
+        fill_long_pane(pane)
+        await pilot.pause()
+        assert pane._mount_start > 0
+        assert len(pane.lines) <= MessagePane.TRANSCRIPT_MAX_ROWS
+        assert pane._blocks[0].start == -1
+        assert pane._message_spans[0] is None
+        assert 'line 0 ' not in rendered_text(pane)
+        assert 'line 39' in rendered_text(pane)
+
+
+async def test_scrolling_to_the_top_backfills_earlier_rows_without_moving_the_view(small_window):
+    async with PaneApp().run_test(size=(40, 20)) as pilot:
+        pane = pilot.app.query_one(MessagePane)
+        await pilot.pause()
+        fill_long_pane(pane)
+        await pilot.pause()
+        mounted = pane._mount_start
+        top_before = pane.lines[0].text
+        pane.scroll_to(y=0, animate=False)
+        await pilot.pause()
+        assert pane._mount_start < mounted
+        assert pane.scroll_offset.y > 0
+        assert pane.lines[pane.scroll_offset.y].text == top_before
+
+
+async def test_a_backfilled_block_is_mounted_at_its_old_row_range(small_window):
+    async with PaneApp().run_test(size=(40, 20)) as pilot:
+        pane = pilot.app.query_one(MessagePane)
+        await pilot.pause()
+        fill_long_pane(pane)
+        await pilot.pause()
+        mounted = pane._mount_start
+        pane.scroll_to(y=0, animate=False)
+        await pilot.pause()
+        assert pane._mount_start < mounted
+        assert pane._blocks[pane._mount_start].start == 0
+        assert 'line ' in rendered_text(pane)
+        start, end = pane._message_spans[pane._mount_start]
+        assert pane.lines[start].text.startswith('System')
+        assert start < end
+
+
+async def test_trimming_above_a_scrolled_up_view_keeps_the_visible_rows_still(small_window):
+    async with PaneApp().run_test(size=(40, 20)) as pilot:
+        pane = pilot.app.query_one(MessagePane)
+        await pilot.pause()
+        fill_long_pane(pane)
+        await pilot.pause()
+        pane.scroll_to(y=5, animate=False)
+        await pilot.pause()
+        top_before = pane.lines[pane.scroll_offset.y].text
+        pane.append_system('appended')
+        await pilot.pause()
+        assert pane.lines[pane.scroll_offset.y].text == top_before
+
+
+async def test_appends_still_follow_the_tail_when_the_window_is_trimmed(small_window):
+    async with PaneApp().run_test(size=(40, 20)) as pilot:
+        pane = pilot.app.query_one(MessagePane)
+        await pilot.pause()
+        fill_long_pane(pane)
+        await pilot.pause()
+        assert pane.scroll_offset.y == pane.max_scroll_y
+        pane.append_system('newest')
+        await pilot.pause()
+        assert pane.scroll_offset.y == pane.max_scroll_y
+        assert 'newest' in rendered_text(pane)
+
+
+async def test_a_resize_rerenders_only_the_mounted_window(small_window):
+    async with PaneApp().run_test(size=(40, 20)) as pilot:
+        pane = pilot.app.query_one(MessagePane)
+        await pilot.pause()
+        fill_long_pane(pane)
+        await pilot.pause()
+        mounted = pane._mount_start
+        emitted: list[int] = []
+        original = pane._emit_block
+        pane._emit_block = lambda idx: emitted.append(idx) or original(idx)
+        await pilot.resize_terminal(30, 20)
+        await pilot.pause(0.5)
+        assert emitted
+        assert min(emitted) == mounted
+
+
+async def test_selection_still_copies_the_visible_rows_of_a_trimmed_transcript(small_window):
+    async with PaneApp().run_test(size=(40, 20)) as pilot:
+        pane = pilot.app.query_one(MessagePane)
+        await pilot.pause()
+        fill_long_pane(pane)
+        await pilot.pause()
+        pane._selection_start = (0, 0)
+        pane._selection_end = (len(pane.lines) - 1, main_module._END_OF_LINE)
+        text = pane._selection_text()
+        assert 'line 39' in text
+        assert 'line 0 ' not in text
+
+
+async def test_a_thousand_block_transcript_stays_within_the_row_budget():
+    async with PaneApp().run_test(size=(80, 40)) as pilot:
+        pane = pilot.app.query_one(MessagePane)
+        await pilot.pause()
+        for index in range(1000):
+            pane.append_system(f'line {index}')
+        await pilot.pause()
+        assert len(pane.lines) <= MessagePane.TRANSCRIPT_MAX_ROWS
+        assert 'line 999' in rendered_text(pane)
+        assert pane._mount_start > 800
