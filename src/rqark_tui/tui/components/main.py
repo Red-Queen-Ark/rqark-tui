@@ -5,7 +5,6 @@ from datetime import datetime
 
 from rich.cells import cell_len
 from rich.console import RenderableType
-from rich.markdown import Markdown
 from rich.segment import Segment
 from rich.style import Style
 from rich.text import Text
@@ -17,6 +16,7 @@ from textual.timer import Timer
 from textual.widgets import RichLog
 
 from rqark_tui.tui.clipboard import write_system_clipboard
+from rqark_tui.tui.syntax import markdown
 
 #: Background colour used to paint the selected cells (macOS-dark-ish blue).
 _SELECTION_BG = '#2E5E8C'
@@ -521,9 +521,9 @@ class MessagePane(RichLog):
                 base = list(cached[2])
                 addition = head[len(cached[1]) :]
                 if addition.strip():
-                    self._join_strips(base, self._render_strips(Markdown(addition), width), width)
+                    self._join_strips(base, self._render_strips(markdown(addition), width), width)
             else:
-                base = self._render_strips(Markdown(head), width)
+                base = self._render_strips(markdown(head), width)
             section.rendered = (width, head, base)
             strips = list(base)
         else:
@@ -531,7 +531,7 @@ class MessagePane(RichLog):
             strips = []
         tail = text[len(head) :]
         if tail.strip():
-            self._join_strips(strips, self._render_strips(Markdown(tail), width), width)
+            self._join_strips(strips, self._render_strips(markdown(tail), width), width)
         return strips
 
     def _render_strips(self, renderable: RenderableType, width: int) -> list[Strip]:
@@ -587,7 +587,7 @@ class MessagePane(RichLog):
                 if self._size_known:
                     rows.append(_Rendered(self._body_strips(section, width)))
                 else:
-                    rows.append(Markdown(section.text))
+                    rows.append(markdown(section.text))
             elif section.text:
                 rows.append(Text(section.text, style=Style(color='#ffffff')))
         elif section.mode == 'image':
