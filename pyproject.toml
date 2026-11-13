@@ -1,6 +1,6 @@
 [project]
 name = "rqark-tui"
-version = "0.9.10"
+version = "0.10.0"
 description = "Terminal chat client for LLM coding agents, built on Textual"
 readme = "README.md"
 requires-python = ">=3.14"
