@@ -15,6 +15,7 @@ from textual.strip import Strip
 from textual.timer import Timer
 from textual.widgets import RichLog
 
+from rqark_tui.tui import diff
 from rqark_tui.tui.clipboard import write_system_clipboard
 from rqark_tui.tui.syntax import markdown
 
@@ -65,6 +66,7 @@ class _Section:
     collapsed: bool = False
     rendered: tuple[int, str, list[Strip]] | None = field(default=None, compare=False, repr=False)
     display: str | None = field(default=None, compare=False, repr=False)
+    diff: bool = False
 
     def __post_init__(self) -> None:
         self.text = _content_text(self.text)
@@ -353,7 +355,7 @@ class MessagePane(RichLog):
             self._new_block('tools', at, [], agent)
             block = self._blocks[-1]
             idx = len(self._blocks) - 1
-        block.sections.append(_Section('result', name or 'tool', content.strip(), collapsed=True))
+        block.sections.append(_Section('result', name or 'tool', content.strip(), collapsed=True, diff=diff.looks_like_diff(content)))
         self._append_section_rows(idx)
 
     def append_error(self, text: str, at: datetime | None = None) -> None:
@@ -772,7 +774,10 @@ class MessagePane(RichLog):
         elif section.mode == 'result':
             rows.append(self._accordion_row(section, idx, si, prefix='tool result: '))
             if not section.collapsed and section.text:
-                rows.append(Text(section.text, style=Style(dim=True, color='#9e9e9e')))
+                if section.diff:
+                    rows.append(diff.render(section.text))
+                else:
+                    rows.append(Text(section.text, style=Style(dim=True, color='#9e9e9e')))
         elif section.mode == 'error':
             if section.text:
                 rows.append(Text(section.text, style=Style(color='#DC143C')))

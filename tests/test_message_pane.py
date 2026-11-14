@@ -1208,3 +1208,56 @@ async def test_a_thousand_block_transcript_stays_within_the_row_budget():
         assert len(pane.lines) <= MessagePane.TRANSCRIPT_MAX_ROWS
         assert 'line 999' in rendered_text(pane)
         assert pane._mount_start > 800
+
+
+DIFF_RESULT = """--- a/src/app.py
++++ b/src/app.py
+@@ -1,2 +1,3 @@
+ keep
+-drop
++added one
++added two
+"""
+
+
+def line_colours(pane: MessagePane, prefix: str) -> set[str]:
+    for line in pane.lines:
+        if line.text.startswith(prefix):
+            return {segment.style.color.get_truecolor().hex for segment in line._segments if segment.style is not None and segment.style.color is not None}
+    return set()
+
+
+async def test_diff_tool_result_renders_coloured_rows_when_expanded():
+    async with PaneApp().run_test(size=(40, 120)) as pilot:
+        pane = pilot.app.query_one(MessagePane)
+        await pilot.pause()
+        pane.append_tool_call('apply_patch', '{}')
+        pane.append_tool_result('apply_patch', DIFF_RESULT)
+        assert pane._blocks[0].sections[1].diff is True
+        assert 'added one' not in rendered_text(pane)
+        pane.action_toggle_section(0, 1)
+        assert 'added one' in rendered_text(pane)
+        add = Color.parse(main_module.diff.DIFF_ADD).get_truecolor().hex
+        delete = Color.parse(main_module.diff.DIFF_DEL).get_truecolor().hex
+        assert add in line_colours(pane, '+added one')
+        assert delete in line_colours(pane, '-drop')
+
+
+async def test_plain_tool_result_is_not_flagged_as_a_diff():
+    async with PaneApp().run_test(size=(40, 120)) as pilot:
+        pane = pilot.app.query_one(MessagePane)
+        await pilot.pause()
+        pane.append_tool_result('bash', 'total 8\n-rw-r--r-- 1 user user 0 f')
+        assert pane._blocks[0].sections[0].diff is False
+
+
+async def test_copy_text_returns_the_raw_patch_not_the_render():
+    async with PaneApp().run_test(size=(40, 120)) as pilot:
+        pane = pilot.app.query_one(MessagePane)
+        await pilot.pause()
+        pane.append_tool_call('apply_patch', '{}')
+        pane.append_tool_result('apply_patch', DIFF_RESULT)
+        pane.action_toggle_section(0, 1)
+        copied = pane._copy_text(pane._blocks[0])
+        assert DIFF_RESULT.strip() in copied
+        assert '@@ -1,2 +1,3 @@' in copied
