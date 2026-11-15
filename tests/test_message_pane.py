@@ -1208,3 +1208,154 @@ async def test_a_thousand_block_transcript_stays_within_the_row_budget():
         assert len(pane.lines) <= MessagePane.TRANSCRIPT_MAX_ROWS
         assert 'line 999' in rendered_text(pane)
         assert pane._mount_start > 800
+
+
+DIFF_RESULT = """--- a/src/app.py
++++ b/src/app.py
+@@ -1,2 +1,3 @@
+ keep
+-drop
++added one
++added two
+"""
+
+
+def line_colours(pane: MessagePane, prefix: str) -> set[str]:
+    for line in pane.lines:
+        if line.text.startswith(prefix):
+            return {segment.style.color.get_truecolor().hex for segment in line._segments if segment.style is not None and segment.style.color is not None}
+    return set()
+
+
+async def test_diff_tool_result_renders_coloured_rows_when_expanded():
+    async with PaneApp().run_test(size=(40, 120)) as pilot:
+        pane = pilot.app.query_one(MessagePane)
+        await pilot.pause()
+        pane.append_tool_call('apply_patch', '{}')
+        pane.append_tool_result('apply_patch', DIFF_RESULT)
+        assert pane._blocks[0].sections[1].diff is True
+        assert 'added one' not in rendered_text(pane)
+        pane.action_toggle_section(0, 1)
+        assert 'added one' in rendered_text(pane)
+        add = Color.parse(main_module.diff.DIFF_ADD).get_truecolor().hex
+        delete = Color.parse(main_module.diff.DIFF_DEL).get_truecolor().hex
+        assert add in line_colours(pane, '+added one')
+        assert delete in line_colours(pane, '-drop')
+
+
+async def test_plain_tool_result_is_not_flagged_as_a_diff():
+    async with PaneApp().run_test(size=(40, 120)) as pilot:
+        pane = pilot.app.query_one(MessagePane)
+        await pilot.pause()
+        pane.append_tool_result('bash', 'total 8\n-rw-r--r-- 1 user user 0 f')
+        assert pane._blocks[0].sections[0].diff is False
+
+
+async def test_copy_text_returns_the_raw_patch_not_the_render():
+    async with PaneApp().run_test(size=(40, 120)) as pilot:
+        pane = pilot.app.query_one(MessagePane)
+        await pilot.pause()
+        pane.append_tool_call('apply_patch', '{}')
+        pane.append_tool_result('apply_patch', DIFF_RESULT)
+        pane.action_toggle_section(0, 1)
+        copied = pane._copy_text(pane._blocks[0])
+        assert DIFF_RESULT.strip() in copied
+        assert '@@ -1,2 +1,3 @@' in copied
+
+
+EDIT_CALL = '{"path": "src/app.py", "old_string": "keep\\ndrop", "new_string": "keep\\nadded one"}'
+
+WRITE_CALL = '{"path": "src/new.py", "content": "first line\\nsecond line"}'
+
+
+async def test_edit_result_is_rendered_as_a_diff_rebuilt_from_the_arguments():
+    async with PaneApp().run_test(size=(40, 120)) as pilot:
+        pane = pilot.app.query_one(MessagePane)
+        await pilot.pause()
+        pane.append_tool_call('edit_file', EDIT_CALL)
+        pane.append_tool_result('edit_file', 'Successfully edited src/app.py')
+        section = pane._blocks[0].sections[1]
+        assert section.diff is True
+        assert section.text == 'Successfully edited src/app.py'
+        pane.action_toggle_section(0, 1)
+        assert '-drop' in rendered_text(pane)
+        add = Color.parse(main_module.diff.DIFF_ADD).get_truecolor().hex
+        assert add in line_colours(pane, '+added one')
+
+
+async def test_write_result_is_rendered_as_additions():
+    async with PaneApp().run_test(size=(40, 120)) as pilot:
+        pane = pilot.app.query_one(MessagePane)
+        await pilot.pause()
+        pane.append_tool_call('write_file', WRITE_CALL)
+        pane.append_tool_result('write_file', 'Wrote 2 lines to src/new.py')
+        assert pane._blocks[0].sections[1].diff is True
+        pane.action_toggle_section(0, 1)
+        assert '+first line' in rendered_text(pane)
+        assert '+second line' in rendered_text(pane)
+
+
+async def test_result_without_arguments_stays_plain():
+    async with PaneApp().run_test(size=(40, 120)) as pilot:
+        pane = pilot.app.query_one(MessagePane)
+        await pilot.pause()
+        pane.append_tool_call('read_file', '{"path": "src/app.py"}')
+        pane.append_tool_result('read_file', 'line one\nline two')
+        assert pane._blocks[0].sections[1].diff is False
+
+
+async def test_accordion_header_counts_the_change():
+    async with PaneApp().run_test(size=(40, 120)) as pilot:
+        pane = pilot.app.query_one(MessagePane)
+        await pilot.pause()
+        pane.append_tool_call('edit_file', EDIT_CALL)
+        pane.append_tool_result('edit_file', 'Successfully edited src/app.py')
+        assert any('tool result: ' in line.text and '+1 -1' in line.text for line in pane.lines)
+
+
+async def test_failed_edit_does_not_show_a_rebuilt_diff():
+    async with PaneApp().run_test(size=(40, 120)) as pilot:
+        pane = pilot.app.query_one(MessagePane)
+        await pilot.pause()
+        pane.append_tool_call('edit_file', EDIT_CALL)
+        pane.append_tool_result('edit_file', 'Error: File not found: src/app.py')
+        assert pane._blocks[0].sections[1].diff is False
+
+
+async def test_a_result_still_finds_its_call_after_the_agent_spoke():
+    async with PaneApp().run_test(size=(40, 120)) as pilot:
+        pane = pilot.app.query_one(MessagePane)
+        await pilot.pause()
+        pane.append_tool_call('edit_file', EDIT_CALL)
+        pane.append_agent_delta('done')
+        pane.append_tool_result('edit_file', 'Successfully edited src/app.py')
+        result = pane._blocks[-1].sections[-1]
+        assert result.mode == 'result'
+        assert result.diff is True
+
+
+async def test_each_call_answers_at_most_one_result():
+    async with PaneApp().run_test(size=(40, 120)) as pilot:
+        pane = pilot.app.query_one(MessagePane)
+        await pilot.pause()
+        pane.append_tool_call('edit_file', EDIT_CALL)
+        pane.append_tool_result('edit_file', 'Successfully edited src/app.py')
+        pane.append_tool_result('edit_file', 'Successfully edited src/app.py')
+        second = pane._blocks[-1].sections[-1]
+        assert second.diff is False
+
+
+SECOND_EDIT_CALL = '{"path": "src/b.py", "old_string": "old b", "new_string": "new b"}'
+
+
+async def test_two_edits_of_the_same_tool_pair_in_call_order():
+    async with PaneApp().run_test(size=(40, 120)) as pilot:
+        pane = pilot.app.query_one(MessagePane)
+        await pilot.pause()
+        pane.append_tool_call('edit_file', EDIT_CALL)
+        pane.append_tool_call('edit_file', SECOND_EDIT_CALL)
+        pane.append_tool_result('edit_file', 'Successfully edited src/app.py')
+        pane.append_tool_result('edit_file', 'Successfully edited src/b.py')
+        first, second = pane._blocks[0].sections[-2:]
+        assert 'src/app.py' in first.patch and 'new b' not in first.patch
+        assert 'src/b.py' in second.patch and 'added one' not in second.patch

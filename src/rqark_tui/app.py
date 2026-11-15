@@ -2,12 +2,12 @@ import asyncio
 from pathlib import Path
 
 from rqark_app.agent.manager import AgentManager
-from rqark_app.app import AgentApp, Message
+from rqark_app.app import AgentApp
 from rqark_app.config.manager import ConfigManager
 from rqark_app.session.manager import SessionManager
 from rqark_app.session.storage import CloudStorage, JSONLStorage
 from rqark_app.types.event import ProviderSwitch
-from rqark_core.types.chat import Chunk, ToolMessage, UserMessage
+from rqark_core.types.chat import Chunk, Message, ToolMessage, UserMessage
 from rqark_core.types.event import AgentPayload
 from rqark_core.types.tool import PlanItem
 
