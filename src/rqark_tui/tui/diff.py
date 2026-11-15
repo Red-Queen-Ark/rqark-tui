@@ -11,6 +11,8 @@ The colours are module constants until the theme module (issue #26) supplies
 so the move is a rename.
 """
 
+import difflib
+import json
 import re
 
 from rich.style import Style
@@ -25,6 +27,14 @@ DIFF_HUNK = '#5f87af'
 DIFF_META = '#757575'
 
 DIFF_CONTEXT = '#9e9e9e'
+
+#: Tools whose arguments carry the change, so a patch can be rebuilt from them.
+REBUILDABLE = ('edit_file', 'write_file')
+
+#: Characters a rebuilt patch may hold. The arguments already keep the full text,
+#: so a huge write would otherwise be copied twice for a render that folds at
+#: :data:`MAX_LINES` anyway.
+MAX_REBUILD = 200_000
 
 #: Rows a single patch may render. A generated lockfile diff runs to thousands
 #: of lines; rows past this point are dropped from the render (the copy buffer
@@ -64,15 +74,13 @@ def _file_path(header: str) -> str:
 
 def _rows(text: str) -> list[tuple[str, str]]:
     lines = text.splitlines()
-    files = sum(1 for line in lines if line.startswith('+++ '))
     rows: list[tuple[str, str]] = []
     index = 0
     while index < len(lines):
         line = lines[index]
         following = lines[index + 1] if index + 1 < len(lines) else ''
         if line.startswith('--- ') and following.startswith('+++ '):
-            if files > 1:
-                rows.append((_file_path(following[4:]), DIFF_META))
+            rows.append((_file_path(following[4:]), DIFF_META))
             index += 2
             continue
         if line.startswith(_PREAMBLE):
@@ -93,6 +101,58 @@ def _row_colour(line: str) -> str:
         if line.startswith(prefix):
             return colour
     return DIFF_CONTEXT
+
+
+def from_arguments(name: str, arguments: str) -> str | None:
+    """Rebuild the change an edit or write call made from its arguments.
+
+    Those tools answer with a verdict (``Successfully edited src/a.py``), so the
+    patch is reconstructed from the arguments: ``old_string`` and ``new_string``
+    for an edit, ``content`` for a write that replaced a file wholesale.
+    """
+    try:
+        data = json.loads(arguments)
+    except ValueError:
+        return None
+    if not isinstance(data, dict):
+        return None
+    path = data.get('path')
+    label = path if isinstance(path, str) and path else name
+    before = data.get('old_string')
+    after = data.get('new_string')
+    if isinstance(before, str) and isinstance(after, str) and before != after and len(before) + len(after) <= MAX_REBUILD:
+        patch = list(difflib.unified_diff(before.splitlines(), after.splitlines(), fromfile=f'a/{label}', tofile=f'b/{label}', lineterm=''))
+        return '\n'.join(patch) if patch else None
+    content = data.get('content')
+    if name == 'write_file' and isinstance(content, str) and content.strip() and len(content) <= MAX_REBUILD:
+        body = content.rstrip('\n').splitlines()
+        rows = [f'--- a/{label}', f'+++ b/{label}', f'@@ -0,0 +1,{len(body)} @@', *(f'+{line}' for line in body)]
+        return '\n'.join(rows)
+    return None
+
+
+def counts(text: str) -> tuple[int, int]:
+    """Added and removed line counts of a patch.
+
+    The ``---``/``+++`` pair is skipped as a pair: a removed line can begin with
+    ``--``, which on its own reads like a file header.
+    """
+    lines = text.splitlines()
+    added = removed = 0
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        following = lines[index + 1] if index + 1 < len(lines) else ''
+        if line.startswith('--- ') and following.startswith('+++ '):
+            index += 2
+            continue
+        if not _HUNK.match(line):
+            if line.startswith('+'):
+                added += 1
+            elif line.startswith('-'):
+                removed += 1
+        index += 1
+    return added, removed
 
 
 def render(text: str) -> Text:

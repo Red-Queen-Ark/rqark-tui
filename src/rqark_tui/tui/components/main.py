@@ -67,6 +67,8 @@ class _Section:
     rendered: tuple[int, str, list[Strip]] | None = field(default=None, compare=False, repr=False)
     display: str | None = field(default=None, compare=False, repr=False)
     diff: bool = False
+    patch: str = ''
+    answered: bool = False
 
     def __post_init__(self) -> None:
         self.text = _content_text(self.text)
@@ -355,8 +357,26 @@ class MessagePane(RichLog):
             self._new_block('tools', at, [], agent)
             block = self._blocks[-1]
             idx = len(self._blocks) - 1
-        block.sections.append(_Section('result', name or 'tool', content.strip(), collapsed=True, diff=diff.looks_like_diff(content)))
+        patch = content if diff.looks_like_diff(content) else ''
+        if not patch and name in diff.REBUILDABLE and not content.lstrip().startswith('Error:'):
+            patch = diff.from_arguments(name, self._tool_arguments(name)) or ''
+        block.sections.append(_Section('result', name or 'tool', content.strip(), collapsed=True, diff=bool(patch), patch=patch))
         self._append_section_rows(idx)
+
+    def _tool_arguments(self, name: str) -> str:
+        """Arguments of the oldest unanswered call to ``name``, the one this result belongs to.
+
+        The call and its result can land in different blocks — a block closes when the
+        agent speaks between them — so the search walks the whole transcript. Results
+        arrive in call order, so pairing with the oldest unanswered call keeps two
+        edits of the same tool apart; a call answers at most one result.
+        """
+        for block in self._blocks:
+            for section in block.sections:
+                if section.mode == 'tool' and section.name == name and not section.answered:
+                    section.answered = True
+                    return section.text
+        return ''
 
     def append_error(self, text: str, at: datetime | None = None) -> None:
         self._flush_now()
@@ -775,7 +795,7 @@ class MessagePane(RichLog):
             rows.append(self._accordion_row(section, idx, si, prefix='tool result: '))
             if not section.collapsed and section.text:
                 if section.diff:
-                    rows.append(diff.render(section.text))
+                    rows.append(diff.render(section.patch))
                 else:
                     rows.append(Text(section.text, style=Style(dim=True, color='#9e9e9e')))
         elif section.mode == 'error':
@@ -878,6 +898,9 @@ class MessagePane(RichLog):
         marker = '▶' if section.collapsed else '▼'
         row = Text()
         row.append(f'{marker} {prefix}{section.name}', Style(bold=True, color='#757575', meta={'@click': f'toggle_section({idx},{si})'}))
+        if section.diff and section.patch:
+            added, removed = diff.counts(section.patch)
+            row.append(f' +{added} -{removed}', Style(dim=True, color='#8a8a8a'))
         return row
 
     def action_copy_message(self, message_index: int) -> None:

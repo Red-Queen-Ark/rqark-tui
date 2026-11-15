@@ -1,4 +1,5 @@
 import io
+import json
 import time
 
 from rich.color import Color
@@ -93,5 +94,55 @@ def test_render_caps_a_large_patch_and_keeps_the_rest_for_the_copy_buffer():
     elapsed = time.perf_counter() - started
     rows = rendered.plain.splitlines()
     assert len(rows) == diff.MAX_LINES + 1
-    assert rows[-1] == '… 2601 more line(s), copy for the full patch'
+    assert rows[-1] == '… 2602 more line(s), copy for the full patch'
     assert elapsed < 0.5
+
+
+EDIT_ARGS = '{"path": "src/app.py", "old_string": "keep\\ndrop", "new_string": "keep\\nadded"}'
+
+WRITE_ARGS = '{"path": "src/new.py", "content": "one\\ntwo\\n"}'
+
+
+def test_from_arguments_builds_a_patch_for_an_edit():
+    patch = diff.from_arguments('edit_file', EDIT_ARGS)
+    assert patch is not None
+    assert diff.looks_like_diff(patch) is True
+    assert 'src/app.py' in patch
+    assert '-drop' in patch.splitlines()
+    assert '+added' in patch.splitlines()
+
+
+def test_from_arguments_treats_a_write_as_all_additions():
+    patch = diff.from_arguments('write_file', WRITE_ARGS)
+    assert patch is not None
+    assert diff.looks_like_diff(patch) is True
+    assert diff.counts(patch) == (2, 0)
+
+
+def test_from_arguments_ignores_calls_without_a_change():
+    assert diff.from_arguments('read_file', '{"path": "src/app.py"}') is None
+    assert diff.from_arguments('edit_file', 'not json') is None
+    assert diff.from_arguments('edit_file', '{"path": "src/app.py", "old_string": "same", "new_string": "same"}') is None
+
+
+def test_counts_separates_added_from_removed_rows():
+    assert diff.counts(PATCH) == (3, 1)
+
+
+def test_render_labels_the_file_of_a_single_file_patch():
+    assert diff.render(PATCH).plain.splitlines()[0] == 'src/app.py'
+
+
+def test_from_arguments_does_not_invent_a_patch_without_arguments():
+    assert diff.from_arguments('edit_file', '{}') is None
+    assert diff.from_arguments('write_file', '{"path": "a.py"}') is None
+
+
+def test_from_arguments_skips_a_patch_too_large_to_rebuild():
+    body = 'x' * (diff.MAX_REBUILD + 1)
+    assert diff.from_arguments('write_file', json.dumps({'path': 'a.py', 'content': body})) is None
+
+
+def test_counts_does_not_mistake_a_removed_sql_comment_for_a_header():
+    text = '--- a/q.sql\n+++ b/q.sql\n@@ -1 +1 @@\n--- keep this comment\n+-- replaced\n'
+    assert diff.counts(text) == (1, 1)
