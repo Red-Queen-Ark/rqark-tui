@@ -29,7 +29,7 @@ async def restored_sessions(config_mgr: ConfigManager, session_mgr: SessionManag
         if session is None:
             config_mgr.dir_cache.remove_session_id(config_mgr.cwd_hash, session_id)
             continue
-        restored.append((session.uuid, session.title, session.get_last_chunk()))
+        restored.append((session.uuid, session.title, session.get_last_chunk(), session.agent_id))
     return restored
 
 
