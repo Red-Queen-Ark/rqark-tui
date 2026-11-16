@@ -1,3 +1,8 @@
+# AGENTS.md
+
+## Contributing
+> Issue、commit、PR、release、版本號一律跟 `CONTRIBUTING.md`。
+
 # Rules
 - 禁寫註解
 - 禁止 squash merge 同 `git revert`；PR 一律用 merge commit，改錯用新 commit
