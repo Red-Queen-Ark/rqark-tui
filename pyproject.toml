@@ -1,6 +1,6 @@
 [project]
 name = "rqark-tui"
-version = "0.10.2"
+version = "0.10.3"
 description = "Terminal chat client for LLM coding agents, built on Textual"
 readme = "README.md"
 requires-python = ">=3.14"
@@ -19,7 +19,7 @@ classifiers = [
 dependencies = [
     "textual>=8.2.8",
     "wcwidth>=0.8.3",
-    "rqark-app==0.12.2",
+    "rqark-app==0.12.3",
     "rqark-core==0.5.2",
 ]
 
