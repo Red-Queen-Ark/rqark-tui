@@ -57,24 +57,32 @@ async def test_a_directory_that_remembers_nothing_restores_nothing():
 async def test_a_remembered_session_is_restored_with_its_transcript():
     config = config_with('uuid-1')
     restored = await restored_sessions(config, manager_with(stored()))
-    assert [(uuid, title) for uuid, title, _messages in restored] == [('uuid-1', 'stored title')]
+    assert [(uuid, title) for uuid, title, _messages, _agent_id in restored] == [('uuid-1', 'stored title')]
     assert [message.content for message in restored[0][2]] == ['old question']
 
 
 async def test_every_remembered_session_is_restored_in_order():
     config = config_with('uuid-2', 'uuid-1')
     restored = await restored_sessions(config, manager_with(stored('uuid-1'), stored('uuid-2')))
-    assert [uuid for uuid, _title, _messages in restored] == ['uuid-2', 'uuid-1']
+    assert [uuid for uuid, _title, _messages, _agent_id in restored] == ['uuid-2', 'uuid-1']
 
 
 async def test_a_remembered_session_without_a_transcript_is_forgotten():
     config = config_with('uuid-gone', 'uuid-1')
     restored = await restored_sessions(config, manager_with(stored()))
-    assert [uuid for uuid, _title, _messages in restored] == ['uuid-1']
+    assert [uuid for uuid, _title, _messages, _agent_id in restored] == ['uuid-1']
     assert config.dir_cache.removed == ['uuid-gone']
+
+
+async def test_a_restored_session_keeps_the_agent_it_was_talked_to_with():
+    config = config_with('uuid-1')
+    session = stored()
+    session.agent_id = 'agent-1'
+    restored = await restored_sessions(config, manager_with(session))
+    assert restored[0][3] == 'agent-1'
 
 
 async def test_an_empty_session_is_restored_as_an_empty_transcript():
     config = config_with('uuid-1')
     restored = await restored_sessions(config, manager_with(stored(title='', history=[])))
-    assert restored == [('uuid-1', '', [])]
+    assert restored == [('uuid-1', '', [], '')]

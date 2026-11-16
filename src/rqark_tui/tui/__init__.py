@@ -33,8 +33,9 @@ COMPACT_COMMAND = '/compact'
 #: Builds the per-session bridge to the agent app: ``(session key, app session id)``.
 SessionFactory = Callable[[str, str | None], SessionHandler]
 
-#: What a session is started with when it is restored from storage.
-Restored = tuple[str, str, Sequence[Message | SummaryMessage]]
+#: What a session is started with when it is restored from storage: its id, its
+#: title, its last chunk and the id of the agent it was last talked to with.
+Restored = tuple[str, str, Sequence[Message | SummaryMessage], str]
 
 
 class AgentTUI(QuitHandler, App):
@@ -99,7 +100,7 @@ class AgentTUI(QuitHandler, App):
         self._pending.extend(sessions)
 
     def _open_sessions(self, sessions: Sequence[Restored]) -> None:
-        restored = [self.new_session(session_id=session_id, title=title, messages=messages) for session_id, title, messages in sessions]
+        restored = [self.new_session(session_id=session_id, title=title, messages=messages, agent_id=agent_id) for session_id, title, messages, agent_id in sessions]
         self.select_session(restored[0].key)
 
     def compose(self) -> ComposeResult:
@@ -119,6 +120,9 @@ class AgentTUI(QuitHandler, App):
             self._open_sessions(pending)
         else:
             self.new_session()
+        active = self.active_session
+        if active is not None and active.agent_name:
+            header.agent_name = active.agent_name
         self.query_one(ChatInput).focus()
 
     def set_agent_name(self, name: str) -> None:
@@ -162,6 +166,23 @@ class AgentTUI(QuitHandler, App):
         uuid = session_uuid(agent_id, path)
         return self._keys_by_uuid.get(uuid) if uuid else None
 
+    def session_agent(self, key: str) -> tuple[str, str]:
+        """The agent id and name a tab was last talked to with, empty before its first turn."""
+        session = self._sessions.get(key)
+        if session is None:
+            return ('', '')
+        return (session.agent_id, session.agent_name)
+
+    def set_session_agent(self, key: str, agent_id: str, name: str) -> None:
+        """Record the agent a tab talks to, and show it while the tab is on screen."""
+        session = self._sessions.get(key)
+        if session is None:
+            return
+        session.agent_id = agent_id
+        session.agent_name = name
+        if key == self._active_key:
+            self.set_agent_name(name)
+
     def bind_session(self, key: str, session_id: str) -> None:
         """Point an app session at a tab, so its events reach that tab's pane."""
         self._keys_by_uuid[session_id] = key
@@ -169,17 +190,17 @@ class AgentTUI(QuitHandler, App):
         if session is not None:
             session.session_id = session_id
 
-    def new_session(self, *, session_id: str | None = None, title: str = '', messages: Sequence[Message | SummaryMessage] | None = None) -> ChatSession:
+    def new_session(self, *, session_id: str | None = None, title: str = '', messages: Sequence[Message | SummaryMessage] | None = None, agent_id: str = '') -> ChatSession:
         """Add a tab with its own pane and switch to it."""
         self._session_count += 1
         key = f'session-{self._session_count}'
         pane = MessagePane(id=f'pane-{key}')
         pane.display = False
         pane.set_tool_keys(self._tool_keys)
-        session = ChatSession(key=key, ordinal=self._session_count, pane=pane, session_id=session_id, title=title)
+        session = ChatSession(key=key, ordinal=self._session_count, pane=pane, session_id=session_id, title=title, agent_id=agent_id)
+        self._sessions[key] = session
         if self._session_factory is not None:
             session.handler = self._session_factory(key, session_id)
-        self._sessions[key] = session
         if session_id is not None:
             self._keys_by_uuid[session_id] = key
         self.mount(pane, before=self.query_one(PopupSelector))
@@ -209,6 +230,8 @@ class AgentTUI(QuitHandler, App):
             session.pane.display = True
             self.query_one(SessionTabs).activate(key)
             self._show_plan(session)
+            if session.agent_name:
+                self.set_agent_name(session.agent_name)
             chat.text = session.draft
         chat.focus()
 

@@ -7,6 +7,7 @@ from rqark_app.compact import compact_messages
 from rqark_app.config.manager import ConfigManager
 from rqark_app.sop.expand import expand
 from rqark_app.tools.context import AGENT_KEY, CLIENT_KEY, SOURCE_KEY
+from rqark_app.types.agent import BaseAgent
 from rqark_app.types.session import Session
 from rqark_core.types.chat import AssistantMessage, Chunk, UserMessage
 from rqark_core.types.event import AgentPayload
@@ -38,6 +39,8 @@ class EventHandler:
         self._stream_content = ''
         self._stream_reasoning = ''
         self._register_stream_tracking()
+        if self.agent_mgr.agents:
+            self._remember_agent(self._current_agent())
 
     def _register_stream_tracking(self) -> None:
         @self.app.on_think()
@@ -56,13 +59,30 @@ class EventHandler:
             return False
         return self.key == '' or self.tui.session_key(ev.agent_id, ev.path) == self.key
 
-    def _extras(self) -> dict[str, object] | None:
+    def _current_agent(self) -> BaseAgent:
+        """The agent this tab talks to, falling back to the app's selected one.
+
+        A tab remembers by id first and by name second: the cloud hands every agent
+        an id, while an agent read from ``~/.rqark/agents`` carries none.
+        """
+        agent_id, agent_name = self.tui.session_agent(self.key)
+        by_id = self.agent_mgr.by_id(agent_id)
+        if by_id is not None:
+            return by_id
+        for agent in self.agent_mgr.agents:
+            if agent_name and agent.name == agent_name:
+                return agent
+        return self.agent_mgr.agent
+
+    def _remember_agent(self, agent: BaseAgent) -> None:
+        self.tui.set_session_agent(self.key, agent.id, agent.name)
+
+    def _extras(self, agent: BaseAgent) -> dict[str, object] | None:
         """The cloud connection the tools and prompts of this turn read."""
         client = self.config_mgr.cloud_client
-        agent_id = self.agent_mgr.agent.id
-        if client is None or not agent_id:
+        if client is None or not agent.id:
             return None
-        return {CLIENT_KEY: client, AGENT_KEY: agent_id, SOURCE_KEY: self.config_mgr.source}
+        return {CLIENT_KEY: client, AGENT_KEY: agent.id, SOURCE_KEY: self.config_mgr.source}
 
     async def gen_title(self, session_uuid: str, first_message: str) -> None:
         titled = await self.app.chat_helper.gen_title(session_uuid, first_message)
@@ -81,8 +101,10 @@ class EventHandler:
                 session = await self.app.session_mgr.create()
                 self.session_id = session.uuid
                 self.tui.bind_session(self.key, session.uuid)
-            extras = self._extras()
-            session = await self.app.chat(text, self.agent_mgr.agent, session_id=self.session_id, images=images, extras=extras)
+            agent = self._current_agent()
+            extras = self._extras(agent)
+            session = await self.app.chat(text, agent, session_id=self.session_id, images=images, extras=extras)
+            self._remember_agent(agent)
             self.session_id = session.uuid
             self.config_mgr.dir_cache.set_session_id(self.config_mgr.cwd_hash, self.session_id)
             if not session.title and text:
@@ -194,11 +216,13 @@ class EventHandler:
                 agents = self.agent_mgr.agents
                 if not agents:
                     return 'No agents available'
+                current = self._current_agent()
+                index = agents.index(current) if current in agents else self.agent_mgr.cur_index
                 entries = [(f'[b]{escape(agent.name)}[/b]', str(i)) for i, agent in enumerate(agents)]
-                entry = await self.tui.pick(entries, title='Agents', index=self.agent_mgr.cur_index)
+                entry = await self.tui.pick(entries, title='Agents', index=index)
                 if entry is None:
                     return None
-                return self._switch_agent(int(entry[1]))
+                return await self._switch_agent(int(entry[1]))
             case _:
                 expanded = await self._expand_sop(command)
                 if expanded is None:
@@ -222,10 +246,17 @@ class EventHandler:
         self.tui.set_model_name(new)
         return f'Model: {old} -> {new}'
 
-    def _switch_agent(self, index: int) -> str:
-        manager = self.agent_mgr
-        old = manager.agent.name
-        manager.switch_to(index)
-        new = manager.agent.name
-        self.tui.set_agent_name(new)
-        return f'Agent: {old} -> {new}'
+    async def _switch_agent(self, index: int) -> str:
+        agents = self.agent_mgr.agents
+        if index < 0 or index >= len(agents):
+            return f'Agent: {self._current_agent().name}'
+        old = self._current_agent().name
+        agent = agents[index]
+        self.agent_mgr.switch_to(index)
+        self._remember_agent(agent)
+        if self.session_id is not None:
+            session = await self.app.session_mgr.get(self.session_id)
+            if session is not None and session.agent_id != agent.id:
+                session.agent_id = agent.id
+                await self.app.session_mgr.save(session.uuid)
+        return f'Agent: {old} -> {agent.name}'

@@ -142,6 +142,7 @@ class FakeTUI:
         self.statuses: list[tuple[str, str]] = []
         self.status_hidden: list[str] = []
         self.bound: list[tuple[str, str]] = []
+        self.agents: dict[str, tuple[str, str]] = {}
         self.key = key
 
     def set_session_title(self, key: str, title: str) -> None:
@@ -173,6 +174,14 @@ class FakeTUI:
 
     def session_key(self, agent_id: str = '', path: tuple[str, ...] = ()) -> str | None:
         return self.key
+
+    def session_agent(self, key: str) -> tuple[str, str]:
+        return self.agents.get(key, ('', ''))
+
+    def set_session_agent(self, key: str, agent_id: str, name: str) -> None:
+        self.agents[key] = (agent_id, name)
+        if key == self.key:
+            self.agent_names.append(name)
 
     async def pick(self, entries, *, title: str = '', index: int = 0) -> Entry | None:
         self.picked.append({'entries': list(entries), 'title': title, 'index': index})
@@ -584,13 +593,63 @@ async def test_agents_lists_every_agent():
     assert picked['index'] == 0
     assert agent_mgr.cur_index == 1
     assert picked['entries'] == [('[b]agent-a[/b]', '0'), ('[b]agent-b[/b]', '1')]
-    assert tui.agent_names == ['agent-b']
+    assert tui.agent_names == ['agent-a', 'agent-b']
+
+
+async def test_a_tab_remembers_the_agent_it_chatted_with():
+    handler, app, tui, _config, agent_mgr = build()
+
+    await handler.chat('hello')
+
+    assert tui.agents['session-1'] == ('', 'agent-a')
+    assert app.chat_calls[0]['agent'] is agent_mgr.agents[0]
+
+
+async def test_a_tab_chats_with_the_agent_it_remembered():
+    handler, app, tui, _config, agent_mgr = build()
+    tui.agents['session-1'] = ('', 'agent-b')
+
+    await handler.chat('hello')
+
+    assert app.chat_calls[0]['agent'] is agent_mgr.agents[1]
+    assert agent_mgr.cur_index == 0
+
+
+async def test_a_tab_remembers_the_agent_by_id_before_its_name():
+    handler, app, tui, _config, agent_mgr = build()
+    agent_mgr.agents[1].id = 'agent-2'
+    tui.agents['session-1'] = ('agent-2', 'agent-a')
+
+    await handler.chat('hello')
+
+    assert app.chat_calls[0]['agent'] is agent_mgr.agents[1]
+
+
+async def test_switching_the_agent_is_remembered_by_this_tab_only():
+    handler, _app, tui, _config, agent_mgr = build(pick_result=('label', '1'))
+
+    assert await handler.command('/agents') == 'Agent: agent-a -> agent-b'
+
+    assert tui.agents['session-1'] == ('', 'agent-b')
+    assert agent_mgr.cur_index == 1
+
+
+async def test_switching_the_agent_is_written_to_the_session():
+    handler, app, _tui, _config, agent_mgr = build(session_id='s1', pick_result=('label', '1'))
+    agent_mgr.agents[1].id = 'agent-2'
+    session = Session(uuid='s1')
+    app.session_mgr.sessions['s1'] = session
+
+    await handler.command('/agents')
+
+    assert session.agent_id == 'agent-2'
+    assert app.session_mgr.saved == ['s1']
 
 
 async def test_agents_without_a_selection_returns_none():
     handler, _app, tui, _config, _agents = build(pick_result=None)
     assert await handler.command('/agents') is None
-    assert tui.agent_names == []
+    assert tui.agent_names == ['agent-a']
 
 
 async def test_agents_without_any_agent_reports_it():

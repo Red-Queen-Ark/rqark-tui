@@ -48,6 +48,8 @@ class ChatSession:
     handler: SessionHandler | None = None
     session_id: str | None = None
     title: str = ''
+    agent_id: str = ''
+    agent_name: str = ''
     plan: list[PlanItem] = field(default_factory=list)
     busy: bool = False
     draft: str = ''
