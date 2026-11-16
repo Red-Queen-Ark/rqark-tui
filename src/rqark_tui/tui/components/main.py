@@ -1,4 +1,5 @@
 import json
+from collections import deque
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -178,6 +179,12 @@ class MessagePane(RichLog):
     #: of them blocks the message loop for the length of the drag.
     RESIZE_DEBOUNCE_SECONDS = 0.15
 
+    MIN_RENDER_WIDTH = 20
+
+    REWIND_STRIP_BUDGET = 1200
+
+    REWIND_SLICE_DELAY_SECONDS = 0.001
+
     DEFAULT_CSS = """
     MessagePane {
         height: 1fr;
@@ -227,6 +234,11 @@ class MessagePane(RichLog):
         self._selection_anchor: tuple[int, int] | None = None
         self._mouse_captured = False
         self._wrap_width = 0
+        self._render_width = 0
+        self._rewind_queue: deque[int] | None = None
+        self._rewind_timer: Timer | None = None
+        self._rewind_pinned = False
+        self._prewarm: dict[int, list[Strip]] = {}
         self._tool_keys: dict[str, str] = {}
         self._dirty_index: int | None = None
         self._flush_timer: Timer | None = None
@@ -250,6 +262,10 @@ class MessagePane(RichLog):
         if self._resize_timer is not None:
             self._resize_timer.stop()
             self._resize_timer = None
+        if self._rewind_timer is not None:
+            self._rewind_timer.stop()
+            self._rewind_timer = None
+        self._rewind_queue = None
         self._dirty_index = None
         if self._mouse_captured:
             self._mouse_captured = False
@@ -259,7 +275,8 @@ class MessagePane(RichLog):
         super().on_resize(event)
         if not self._size_known or not self._blocks:
             return
-        if self.scrollable_content_region.width == self._wrap_width:
+        width = self.scrollable_content_region.width
+        if width <= 0 or width == self._wrap_width:
             return
         if self._wrap_width == 0:
             # First layout: nothing is on screen yet, so paint it now.
@@ -276,7 +293,8 @@ class MessagePane(RichLog):
         self._resize_timer = None
         if not self._size_known or not self._blocks:
             return
-        if self.scrollable_content_region.width != self._wrap_width:
+        width = self.scrollable_content_region.width
+        if width > 0 and width != self._wrap_width:
             self._rebuild()
 
     # --- message appending -------------------------------------------------
@@ -484,6 +502,8 @@ class MessagePane(RichLog):
 
     def _flush_now(self) -> None:
         """Render the queued block immediately; structural edits must not wait for a tick."""
+        if self._rewind_queue is not None:
+            return
         index = self._dirty_index
         if index is not None:
             self._rewrite_tail(index)
@@ -512,7 +532,7 @@ class MessagePane(RichLog):
         pinned = self._pinned_to_tail()
         self._dirty_index = None
         del self.lines[start:]
-        self._line_cache.clear()
+        self._drop_cached_line_range(start)
         self._widest_line_width = max((line.cell_length for line in self.lines), default=0)
         del self._message_spans[idx:]
         for index in range(idx, len(self._blocks)):
@@ -523,6 +543,12 @@ class MessagePane(RichLog):
         self._clear_selection()
         self._trim_top(pinned)
 
+    def _drop_cached_line_range(self, start: int) -> None:
+        """Drop cached strips for lines at or after ``start``, keeping earlier rows."""
+        stale = [key for key in self._line_cache.keys() if key[0] >= start]
+        for key in stale:
+            self._line_cache.discard(key)
+
     def _rebuild(self) -> None:
         """Re-render the mounted window at the current width."""
         pinned = self._pinned_to_tail()
@@ -532,31 +558,67 @@ class MessagePane(RichLog):
             self._mount_start = self._tail_start()
         self._rewindow(pinned)
 
+    def _widths(self) -> tuple[int, int]:
+        """Return the layout width and the wider value used for rendering."""
+        logical = self.scrollable_content_region.width
+        return logical, max(logical, self.MIN_RENDER_WIDTH)
+
     def _tail_start(self) -> int:
         """Index of the oldest block that fits in the row budget, counting from the newest."""
-        width = max(self.scrollable_content_region.width, 1)
+        logical, width = self._widths()
+        self._wrap_width = logical
+        self._render_width = width
         start = len(self._blocks)
         rows = 0
+        self._prewarm = {}
         while start > 0 and rows < self.TRANSCRIPT_MAX_ROWS:
             start -= 1
-            rows += len(self._block_strips(start, width))
+            strips = self._block_strips(start, width)
+            self._prewarm[start] = strips
+            rows += len(strips)
         return start
 
     def _rewindow(self, pinned: bool) -> None:
         """Render blocks from ``_mount_start`` downwards into ``self.lines``."""
-        width = max(self.scrollable_content_region.width, 1)
-        self._wrap_width = width
+        logical, width = self._widths()
+        if width != self._render_width:
+            self._prewarm.clear()
+        self._wrap_width = logical
+        self._render_width = width
+        if self._rewind_timer is not None:
+            self._rewind_timer.stop()
+            self._rewind_timer = None
         del self.lines[:]
         self._line_cache.clear()
         self._widest_line_width = 0
         self._message_spans[:] = [None] * len(self._blocks)
-        for index in range(self._mount_start, len(self._blocks)):
-            self._blocks[index].start = len(self.lines)
-            self._emit_block(index)
+        self._rewind_pinned = pinned
+        self._rewind_queue = deque(range(self._mount_start, len(self._blocks)))
+        self._rewind_step()
+
+    def _rewind_step(self) -> None:
+        """Emit the next slice of a rebuild, yielding between slices."""
+        self._rewind_timer = None
+        queue = self._rewind_queue
+        if queue is None:
+            return
+        budget = 0
+        while queue and budget < self.REWIND_STRIP_BUDGET:
+            idx = queue.popleft()
+            if idx >= len(self._blocks):
+                continue
+            budget += self._emit_block(idx)
+        if queue:
+            self._rewind_timer = self.set_timer(self.REWIND_SLICE_DELAY_SECONDS, self._rewind_step)
+            return
+        self._rewind_queue = None
+        self._prewarm.clear()
         self.virtual_size = Size(self._widest_line_width, len(self.lines))
-        if pinned:
+        if self._rewind_pinned:
             self.scroll_end(animate=False, immediate=True)
         self._clear_selection()
+        if self._dirty_index is not None:
+            self._flush_now()
 
     def _set_span(self, idx: int, span: tuple[int, int]) -> None:
         while len(self._message_spans) <= idx:
@@ -610,7 +672,7 @@ class MessagePane(RichLog):
             return
         self._backfilling = True
         try:
-            width = max(self.scrollable_content_region.width, 1)
+            width = self._render_width or self._widths()[1]
             start = self._mount_start
             rows = 0
             while start > 0 and rows < self.TRANSCRIPT_BACKFILL_ROWS:
@@ -746,24 +808,33 @@ class MessagePane(RichLog):
         else:
             strips.extend(self._render_strips(row, width))
 
-    def _emit_block(self, idx: int) -> None:
+    def _emit_block(self, idx: int) -> int:
         block = self._blocks[idx]
         start = len(self.lines)
-        width = max(self.scrollable_content_region.width, 1)
-        self._wrap_width = width
-        self._write_strips(self._block_strips(idx, width))
+        logical, width = self._widths()
+        self._wrap_width = logical
+        self._render_width = width
+        strips = self._prewarm.pop(idx, None)
+        if strips is None:
+            strips = self._block_strips(idx, width)
+        self._write_strips(strips)
         block.start = start
         self._set_span(idx, (start, len(self.lines)))
+        return len(strips)
 
     def _append_section_rows(self, idx: int) -> None:
+        if self._rewind_queue is not None:
+            self._mark_dirty(idx)
+            return
         block = self._blocks[idx]
         span = (block.start, len(self.lines))
         if not self._size_known or idx != len(self._blocks) - 1 or not self._message_spans or self._message_spans[-1] != span:
             self._rewrite_tail(idx)
             return
         pinned = self._pinned_to_tail()
-        width = max(self.scrollable_content_region.width, 1)
-        self._wrap_width = width
+        logical, width = self._widths()
+        self._wrap_width = logical
+        self._render_width = width
         si = len(block.sections) - 1
         self._emit_rows(self._section_rows(block, idx, si, width), width)
         self._set_span(idx, (block.start, len(self.lines)))
@@ -827,7 +898,7 @@ class MessagePane(RichLog):
         if revert:
             head.append(' [revert]', Style(color=_REVERT, meta={'@click': f'revert_message({idx})'}))
         head.append(' [copy]', Style(color=_ACCENT, meta={'@click': f'copy_message({idx})'}))
-        width = max(self.scrollable_content_region.width, 1)
+        width = self._render_width or self.scrollable_content_region.width
         if head.cell_len > width:
             head.right_crop(len(head.plain) - len(_crop_plain(head.plain, 0, width)))
         return head

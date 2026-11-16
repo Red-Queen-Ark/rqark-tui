@@ -1359,3 +1359,48 @@ async def test_two_edits_of_the_same_tool_pair_in_call_order():
         first, second = pane._blocks[0].sections[-2:]
         assert 'src/app.py' in first.patch and 'new b' not in first.patch
         assert 'src/b.py' in second.patch and 'added one' not in second.patch
+
+
+async def test_narrow_resize_keeps_a_sane_render_width(small_window):
+    async with PaneApp().run_test(size=(40, 20)) as pilot:
+        pane = pilot.app.query_one(MessagePane)
+        await pilot.pause()
+        fill_long_pane(pane)
+        await pilot.pause()
+        await pilot.resize_terminal(6, 20)
+        await pilot.pause(0.5)
+        assert pane._render_width >= MessagePane.MIN_RENDER_WIDTH
+
+
+async def test_resize_rebuild_yields_between_slices(monkeypatch):
+    async with PaneApp().run_test(size=(40, 20)) as pilot:
+        pane = pilot.app.query_one(MessagePane)
+        await pilot.pause()
+        fill_long_pane(pane)
+        await pilot.pause()
+        monkeypatch.setattr(MessagePane, 'REWIND_STRIP_BUDGET', 1)
+        slices: list[int] = []
+        original = MessagePane._rewind_step
+
+        def counting(self: MessagePane) -> None:
+            slices.append(1)
+            original(self)
+
+        monkeypatch.setattr(MessagePane, '_rewind_step', counting)
+        await pilot.resize_terminal(30, 20)
+        await pilot.pause(0.8)
+        assert pane._rewind_queue is None
+        assert len(slices) > 1
+
+
+async def test_flush_is_deferred_while_a_rebuild_is_in_flight():
+    async with PaneApp().run_test(size=(40, 20)) as pilot:
+        pane = pilot.app.query_one(MessagePane)
+        await pilot.pause()
+        pane.append_agent_delta('token ')
+        pane._rewind_queue = main_module.deque([0])
+        pane._flush_now()
+        assert pane._dirty_index is not None
+        pane._rewind_queue = None
+        pane._flush_now()
+        assert pane._dirty_index is None
