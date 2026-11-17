@@ -11,7 +11,7 @@ from rqark_app.provider.manager import ProviderManager
 from rqark_app.sop.types import LOCAL_SOURCE, Sop
 from rqark_app.tools.context import AGENT_KEY, CLIENT_KEY, SOURCE_KEY
 from rqark_app.types.session import Session, SummaryMessage
-from rqark_core.types.chat import AssistantMessage, Chunk, Message, ToolMessage, UserMessage
+from rqark_core.types.chat import AssistantMessage, Chunk, Message, ToolCall, ToolMessage, UserMessage
 from rqark_core.types.event import AgentPayload
 from rqark_core.types.provider import Provider
 
@@ -227,16 +227,22 @@ class FakeApp:
         handler = self.handlers['content']
         await handler(cast(AgentPayload[Chunk], FakePayload(FakeChunk(text), 'agent-a:session-1', path)))
 
-    async def chat(self, text: str, agent, session_id: str | None = None, images: list[str] | None = None, extras: dict | None = None) -> Session:
+    async def chat(self, text: str, agent, session_id: str | None = None, images: list[str] | None = None, extras: dict | None = None, partial: list | None = None) -> Session:
         self.chat_calls.append({'text': text, 'agent': agent, 'session_id': session_id, 'images': images, 'extras': extras})
         session = await self.session_mgr.get(session_id) if session_id is not None else None
         if session is None:
             session = await self.session_mgr.create()
         self.session = session
+        if partial is not None:
+            # The real app.chat hands back the whole turn, prefix included, because
+            # update_history_to_last_chunk keeps the first message of the chunk.
+            partial.extend([*session.get_last_chunk_for_chat(), UserMessage(text, images=list(images) if images else [])])
         if self.stream_reasoning:
             await self.emit_think(self.stream_reasoning)
         if self.stream_content:
             await self.emit_content(self.stream_content)
+        if partial is not None and (self.stream_content or self.stream_reasoning):
+            partial.append(AssistantMessage(self.stream_content, reasoning_content=self.stream_reasoning or None))
         if self.during_chat is not None:
             await self.during_chat()
         if self.chat_error is not None:
@@ -502,29 +508,40 @@ async def test_stop_records_reasoning_even_without_content():
     assert (partial.content, partial.reasoning_content) == ('', 'only reasoning')
 
 
-async def test_stop_without_streamed_text_saves_nothing():
+async def test_stop_before_the_first_token_saves_the_user_message():
     handler, app, _tui, _config, _agents = build()
     session = await app.session_mgr.create()
     handler.session_id = session.uuid
     await stop_during_chat(handler, app)
     await handler.chat('hello')
-    assert app.session_mgr.saved == []
-    assert session.history == []
+    assert [type(message) for message in session.history] == [UserMessage]
+    assert session.history[0].content == 'hello'
+    assert app.session_mgr.saved == [session.uuid]
+
+
+async def test_stop_keeps_the_tool_calls_the_turn_already_made():
+    handler, app, _tui, _config, _agents = build()
+    session = await app.session_mgr.create()
+    handler.session_id = session.uuid
+    call = ToolCall('call-1', 'function', 'read_file', '{"path": "a.py"}')
+    turn: list[Message] = [UserMessage('hello'), AssistantMessage(content='', tool_calls=[call]), ToolMessage('call-1', 'print(1)', 'read_file', '{"path": "a.py"}')]
+    await handler._save_partial(turn)
+    assert [type(message) for message in session.history] == [UserMessage, AssistantMessage, ToolMessage]
+    assert session.history[1].tool_calls == [call]
+    assert session.history[2].content == 'print(1)'
+    assert app.session_mgr.saved == [session.uuid]
 
 
 async def test_partial_save_without_a_session_saves_nothing():
     handler, app, _tui, _config, _agents = build()
-    handler._stream_content = 'text'
-    handler._last_chat_text = 'hello'
     assert handler.session_id is None
-    await handler._save_partial()
+    await handler._save_partial([UserMessage('hello')])
     assert app.session_mgr.saved == []
 
 
 async def test_partial_save_with_a_missing_session_saves_nothing():
     handler, app, _tui, _config, _agents = build(session_id='missing')
-    handler._stream_content = 'text'
-    await handler._save_partial()
+    await handler._save_partial([UserMessage('hello')])
     assert app.session_mgr.saved == []
 
 
