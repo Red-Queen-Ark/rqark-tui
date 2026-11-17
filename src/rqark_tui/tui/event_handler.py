@@ -9,7 +9,7 @@ from rqark_app.sop.expand import expand
 from rqark_app.tools.context import AGENT_KEY, CLIENT_KEY, SOURCE_KEY
 from rqark_app.types.agent import BaseAgent
 from rqark_app.types.session import Session
-from rqark_core.types.chat import AssistantMessage, Chunk, UserMessage
+from rqark_core.types.chat import Chunk, Message
 from rqark_core.types.event import AgentPayload
 
 from rqark_tui.tui import AgentTUI
@@ -96,6 +96,9 @@ class EventHandler:
         self._stream_reasoning = ''
         self._stream_active = True
         self._stop_requested = False
+        # Filled by the app and the core if this turn is cancelled: the turn's own
+        # history, which is the only place its tool calls and results exist.
+        partial: list[Message] = []
         try:
             if self.session_id is None:
                 session = await self.app.session_mgr.create()
@@ -103,7 +106,7 @@ class EventHandler:
                 self.tui.bind_session(self.key, session.uuid)
             agent = self._current_agent()
             extras = self._extras(agent)
-            session = await self.app.chat(text, agent, session_id=self.session_id, images=images, extras=extras)
+            session = await self.app.chat(text, agent, session_id=self.session_id, images=images, extras=extras, partial=partial)
             self._remember_agent(agent)
             self.session_id = session.uuid
             self.config_mgr.dir_cache.set_session_id(self.config_mgr.cwd_hash, self.session_id)
@@ -114,7 +117,7 @@ class EventHandler:
             self._record_turn(session, extras)
         except asyncio.CancelledError:
             if self._stop_requested:
-                await self._save_partial()
+                await self._save_partial(partial)
                 return
             raise
         finally:
@@ -131,19 +134,21 @@ class EventHandler:
         self._memory_tasks.add(task)
         task.add_done_callback(self._memory_tasks.discard)
 
-    async def _save_partial(self) -> None:
-        content = self._stream_content
-        reasoning = self._stream_reasoning
-        if not content and not reasoning:
-            return
-        if self.session_id is None:
+    async def _save_partial(self, turn: list[Message]) -> None:
+        """Store a stopped turn as far as it got.
+
+        `turn` is the turn's own history as the cancelled chat left it: the user
+        message, every tool iteration it finished and the tool calls it never got
+        answers for. The streamed buffers only held the answer text, so a stop used
+        to drop the whole tool record of the turn and rebuild a user message with
+        an id the pane had never shown.
+        """
+        if not turn or self.session_id is None:
             return
         session = await self.app.session_mgr.get(self.session_id)
         if session is None:
             return
-        partial = AssistantMessage(content=content, reasoning_content=reasoning or None)
-        messages = [*session.get_last_chunk_for_chat(), UserMessage(self._last_chat_text, images=list(self._last_chat_images)), partial]
-        session.update_history_to_last_chunk(messages)
+        session.update_history_to_last_chunk(turn)
         await self.app.session_mgr.save(session.uuid)
         self.config_mgr.dir_cache.set_session_id(self.config_mgr.cwd_hash, self.session_id)
 
