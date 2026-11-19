@@ -9,6 +9,7 @@ from rqark_app.types.session import SummaryMessage
 from rqark_core.types.chat import AssistantMessage, Message, SystemMessage, ToolMessage, UserMessage
 from rqark_core.types.tool import BaseTool, PlanItem
 from textual.app import App, AutopilotCallbackType, ComposeResult
+from textual.driver import Driver
 from textual.screen import ModalScreen
 from textual.worker import Worker
 
@@ -19,6 +20,7 @@ from rqark_tui.tui.components.main import MessagePane
 from rqark_tui.tui.components.popup import Entry, PopupSelector
 from rqark_tui.tui.components.quit_handler import QuitHandler
 from rqark_tui.tui.components.session import SessionTabs
+from rqark_tui.tui.driver import tolerant_driver_class
 from rqark_tui.tui.session import ChatSession, SessionHandler, session_uuid
 
 #: Slash command the TUI answers itself: closing the session on screen.
@@ -67,6 +69,9 @@ class AgentTUI(QuitHandler, App):
         self._session_count = 0
         self._pending: list[Restored] = []
         self._session_factory: SessionFactory | None = None
+
+    def get_driver_class(self) -> type[Driver]:
+        return tolerant_driver_class(super().get_driver_class())
 
     def set_tools(self, tools: Sequence[BaseTool]) -> None:
         self._tool_keys = {tool.name: tool.display_key for tool in tools}
