@@ -112,18 +112,24 @@ def build_storage(config_mgr: ConfigManager) -> CloudStorage | JSONLStorage:
     return JSONLStorage(config_mgr.config_path / 'sessions' / SESSION_SOURCE.lower())
 
 
-def build_app(config_mgr: ConfigManager) -> AgentApp:
+def build_app(config_mgr: ConfigManager, session_mgr: SessionManager | None = None) -> AgentApp:
     """The agent app for this run, with the storage its transcripts live in."""
-    return AgentApp(config_mgr.providers, build_storage(config_mgr))
+    return AgentApp(config_mgr.providers, build_storage(config_mgr), session_mgr=session_mgr)
+
+
+def remembered_ids(config_mgr: ConfigManager) -> list[str]:
+    """The session ids this directory remembers, most recently used first."""
+    return config_mgr.dir_cache.get_session_ids(config_mgr.cwd_hash)
 
 
 async def load_workspace(config_mgr: ConfigManager, app: AgentApp) -> tuple[list[Restored], list[Sop]]:
-    """Read the stored sessions and the SOP list together.
+    """Read the sessions this directory remembers, and the SOP list.
 
-    Both are independent round trips to storage, so they run at the same time
-    rather than one after the other.
+    Only the remembered ids are asked for: the cloud answers a listing with one
+    message fetch per session, and none of the others are ever on screen.
     """
-    _, sops = await asyncio.gather(app.session_mgr.load(), config_mgr.sop_manager.list())
+    ids = remembered_ids(config_mgr)
+    _, sops = await asyncio.gather(app.session_mgr.load(ids), config_mgr.sop_manager.list())
     return await restored_sessions(config_mgr, app.session_mgr), list(sops)
 
 
@@ -140,12 +146,19 @@ async def bootstrap(tui: AgentTUI, startup: Startup, config_dir: Path | None = N
 
     Every step here answers a cloud round trip, so it runs after the interface
     is on screen: the header, the input and the tab strip are painted first and
-    fill in as each answer arrives.
+    fill in as each answer arrives. The session listing does not depend on the
+    agent or provider catalogue, so it starts before them: one round trip covers
+    the whole start instead of two back to back.
     """
     config_mgr = ConfigManager(str(config_dir or Path.home() / '.rqark'), cloud_transport=cloud_transport, source=SESSION_SOURCE)
-    await config_mgr.load()
+    config_mgr.prepare()
+
+    session_mgr = SessionManager(build_storage(config_mgr))
+    pending = asyncio.gather(session_mgr.load(remembered_ids(config_mgr)), config_mgr.sop_manager.list())
+
+    await config_mgr.load_catalog()
     agent_mgr = load_agent_manager(config_mgr)
-    app = build_app(config_mgr)
+    app = build_app(config_mgr, session_mgr)
     startup.config_mgr, startup.app = config_mgr, app
 
     tui.set_cloud_mode(config_mgr.cloud_client is not None)
@@ -155,7 +168,8 @@ async def bootstrap(tui: AgentTUI, startup: Startup, config_dir: Path | None = N
     tui.set_session_factory(lambda key, session_id: EventHandler(app, tui, agent_mgr, config_mgr, session_id, key))
     await connect_agent_event_to_tui(app, tui)
 
-    return await load_workspace(config_mgr, app)
+    _, sops = await pending
+    return await restored_sessions(config_mgr, app.session_mgr), list(sops)
 
 
 async def _main() -> None:
