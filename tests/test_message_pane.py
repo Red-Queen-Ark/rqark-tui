@@ -1142,6 +1142,37 @@ async def test_a_backfilled_block_is_mounted_at_its_old_row_range(small_window):
         assert start < end
 
 
+async def test_an_animated_scroll_to_the_top_backfills_without_crashing(small_window):
+    async with PaneApp().run_test(size=(40, 8)) as pilot:
+        pane = pilot.app.query_one(MessagePane)
+        await pilot.pause()
+        fill_long_pane(pane)
+        await pilot.pause()
+        mounted = pane._mount_start
+        top_before = pane.lines[int(pane.scroll_offset.y)].text
+        pane.scroll_to(y=0, animate=True, duration=0.1)
+        await pilot.wait_for_animation()
+        await pilot.pause()
+        assert pane._mount_start < mounted
+        assert pane.lines[int(pane.scroll_offset.y)].text == top_before
+
+
+async def test_a_second_animated_scroll_to_the_top_backfills_again(small_window):
+    async with PaneApp().run_test(size=(40, 8)) as pilot:
+        pane = pilot.app.query_one(MessagePane)
+        await pilot.pause()
+        fill_long_pane(pane)
+        await pilot.pause()
+        pane.scroll_to(y=0, animate=True, duration=0.1)
+        await pilot.wait_for_animation()
+        await pilot.pause()
+        first = pane._mount_start
+        pane.scroll_to(y=0, animate=True, duration=0.1)
+        await pilot.wait_for_animation()
+        await pilot.pause()
+        assert pane._mount_start < first
+
+
 async def test_trimming_above_a_scrolled_up_view_keeps_the_visible_rows_still(small_window):
     async with PaneApp().run_test(size=(40, 20)) as pilot:
         pane = pilot.app.query_one(MessagePane)
