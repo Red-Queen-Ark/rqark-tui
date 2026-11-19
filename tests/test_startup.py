@@ -213,3 +213,66 @@ async def test_a_placeholder_with_text_is_not_thrown_away():
         await pilot.pause()
 
         assert [session.title for session in tui.sessions] == ['', 'Restored']
+
+
+async def test_the_placeholder_can_chat_once_the_factory_is_set():
+    release = asyncio.Event()
+
+    async def loader():
+        await release.wait()
+        return [], []
+
+    class Bridge:
+        def __init__(self) -> None:
+            self.chats: list[str] = []
+
+        async def chat(self, text, images=None) -> None:
+            self.chats.append(text)
+
+    bridge = Bridge()
+
+    tui = AgentTUI()
+    tui.load_startup(loader)
+    async with tui.run_test(size=(40, 100)) as pilot:
+        chat = tui.query_one(ChatInput)
+        await pilot.pause()
+        placeholder = tui.active_session
+        assert placeholder is not None
+        assert placeholder.handler is None
+
+        tui.set_session_factory(lambda _key, _session_id: bridge)
+        assert placeholder.handler is bridge
+
+        chat.text = 'hello'
+        await pilot.press('enter')
+        await pilot.pause()
+        while not bridge.chats:
+            await pilot.pause(0.05)
+        assert bridge.chats == ['hello']
+
+        release.set()
+        await pilot.pause()
+
+
+async def test_text_sent_before_the_factory_is_set_is_kept():
+    release = asyncio.Event()
+
+    async def loader():
+        await release.wait()
+        return [], []
+
+    tui = AgentTUI()
+    tui.load_startup(loader)
+    async with tui.run_test(size=(40, 100)) as pilot:
+        chat = tui.query_one(ChatInput)
+        await pilot.pause()
+        chat.text = 'hello'
+        await pilot.press('enter')
+        await pilot.pause()
+
+        assert chat.text == 'hello'
+        assert tui.active_session is not None
+        assert tui.active_session.pane.is_empty
+
+        release.set()
+        await pilot.pause()

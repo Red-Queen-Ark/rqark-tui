@@ -85,6 +85,7 @@ class AgentTUI(QuitHandler, App):
         self._pending: list[Restored] = []
         self._session_factory: SessionFactory | None = None
         self._startup_loader: StartupLoader | None = None
+        self._startup_running = False
         # The tab made at mount while the loader runs, so the layout is complete
         # before storage answers. It is dropped once the stored tabs arrive, unless
         # the user has already typed into it.
@@ -137,8 +138,15 @@ class AgentTUI(QuitHandler, App):
         return self._sops
 
     def set_session_factory(self, factory: SessionFactory) -> None:
-        """Set how a new tab gets its bridge to the agent app."""
+        """Set how a new tab gets its bridge to the agent app.
+
+        A tab opened before the factory was known (the one made at mount while the
+        background start runs) gets its handler here, so it can chat from then on.
+        """
         self._session_factory = factory
+        for session in self._sessions.values():
+            if session.handler is None:
+                session.handler = factory(session.key, session.session_id)
 
     def open_sessions(self, sessions: Sequence[Restored]) -> None:
         """Make stored sessions tabs, in the order given; the first one is shown.
@@ -176,6 +184,7 @@ class AgentTUI(QuitHandler, App):
             session = self.new_session()
             if self._startup_loader is not None:
                 self._placeholder_key = session.key
+                self._startup_running = True
                 self.run_worker(self._run_startup(), name='startup', group='startup', exit_on_error=False)
         active = self.active_session
         if active is not None and active.agent_name:
@@ -192,6 +201,8 @@ class AgentTUI(QuitHandler, App):
             sessions, sops = await loader()
         except Exception as error:
             self.notify(str(error), severity='error', timeout=8)
+        finally:
+            self._startup_running = False
         self.set_sops(sops)
         if sessions:
             await self._drop_placeholder()
@@ -651,6 +662,12 @@ class AgentTUI(QuitHandler, App):
             return
         if session.busy:
             self.notify('Still processing — please wait', severity='warning', timeout=4)
+            return
+        if session.handler is None and self._startup_running:
+            # The background start has not built the bridge to the agent app yet.
+            # The input clears itself on submit, so the text is put back.
+            self.query_one(ChatInput).text = text
+            self.notify('Still starting — please wait', severity='warning', timeout=4)
             return
         session.pane.append_message(text, images=images)
         if session.handler is None:
