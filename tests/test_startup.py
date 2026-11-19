@@ -9,6 +9,7 @@ from rqark_tui.app import build_app, build_storage, load_workspace
 from rqark_tui.tui import AgentTUI
 from rqark_tui.tui.components.footer import ChatInput
 from rqark_tui.tui.components.main import MessagePane
+from rqark_tui.tui.theme import active_theme
 
 
 class Probe:
@@ -276,3 +277,94 @@ async def test_text_sent_before_the_factory_is_set_is_kept():
 
         release.set()
         await pilot.pause()
+
+
+class FakeClient:
+    def __init__(self, entries: list[dict] | None = None, error: Exception | None = None) -> None:
+        self.entries = entries or []
+        self.error = error
+        self.written: list[tuple[str, object]] = []
+
+    async def list_user_config(self) -> list[dict]:
+        if self.error is not None:
+            raise self.error
+        return list(self.entries)
+
+    async def set_user_config(self, key: str, value: object) -> dict:
+        if self.error is not None:
+            raise self.error
+        self.written.append((key, value))
+        return {'key': key, 'value': value}
+
+
+async def test_the_stored_theme_is_read_back():
+    from rqark_tui.app import theme_setting
+
+    client = FakeClient([{'key': 'memory.event_log', 'value': True}, {'key': 'tui.theme', 'value': 'matrix'}])
+
+    assert await theme_setting(client)[0]() == 'matrix'
+
+
+async def test_an_unknown_stored_theme_is_ignored():
+    from rqark_tui.app import theme_setting
+
+    assert await theme_setting(FakeClient([{'key': 'tui.theme', 'value': 'solarized'}]))[0]() is None
+
+
+async def test_a_missing_stored_theme_reads_as_none():
+    from rqark_tui.app import theme_setting
+
+    assert await theme_setting(FakeClient())[0]() is None
+
+
+async def test_the_theme_is_written_under_its_setting_key():
+    from rqark_tui.app import THEME_SETTING, theme_setting
+
+    client = FakeClient()
+    await theme_setting(client)[1]('eva')
+
+    assert client.written == [(THEME_SETTING, 'eva')]
+
+
+async def test_picking_a_theme_saves_it():
+    saved: list[str] = []
+
+    async def saver(name: str) -> None:
+        saved.append(name)
+
+    tui = AgentTUI(theme='redqueen')
+    tui.set_theme_saver(saver)
+    async with tui.run_test(size=(40, 100)) as pilot:
+        await pilot.pause()
+        tui._switch_theme('matrix')
+        while not saved:
+            await pilot.pause(0.05)
+        assert saved == ['matrix']
+
+
+async def test_applying_a_theme_without_persist_does_not_save_it():
+    saved: list[str] = []
+
+    async def saver(name: str) -> None:
+        saved.append(name)
+
+    tui = AgentTUI(theme='redqueen')
+    tui.set_theme_saver(saver)
+    async with tui.run_test(size=(40, 100)) as pilot:
+        await pilot.pause()
+        tui.apply_theme('eva')
+        await pilot.pause(0.1)
+        assert saved == []
+
+
+async def test_a_failing_saver_keeps_the_theme_on_screen():
+    async def saver(_name: str) -> None:
+        raise RuntimeError('cloud is down')
+
+    tui = AgentTUI(theme='redqueen')
+    tui.set_theme_saver(saver)
+    async with tui.run_test(size=(40, 100)) as pilot:
+        await pilot.pause()
+        tui._switch_theme('eva')
+        await pilot.pause(0.2)
+        assert active_theme().name == 'eva'

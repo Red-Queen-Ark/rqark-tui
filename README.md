@@ -99,7 +99,7 @@ tools:
 
 內建 `default`（原本的配色，預設）、`redqueen`、`eva`、`matrix`。後三者色值取自 `rqark-agent-cloud-web-ui` 的 Dark Theme。
 
-`/theme` 會開出選擇面板，與 `/models`、`/agents` 一樣用方向鍵挑選、`Enter` 確認、`Esc` 取消；`/theme <名稱>` 直接切換。環境變數 `RQARK_THEME` 決定啟動時的預設。切換即時生效，重啟後回到環境變數或 `default`。
+`/theme` 會開出選擇面板，與 `/models`、`/agents` 一樣用方向鍵挑選、`Enter` 確認、`Esc` 取消；`/theme <名稱>` 直接切換。切換即時生效，並寫入 data cloud 嘅使用者設定（key `tui.theme`），下次啟動自動套回。環境變數 `RQARK_THEME` 仍然可以覆寫啟動時嘅選擇；未連 cloud 或未存過設定時用 `default`。
 
 ## 啟動
 
