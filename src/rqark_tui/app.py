@@ -1,6 +1,7 @@
 import asyncio
 from pathlib import Path
 
+import httpx
 from rqark_app.agent.manager import AgentManager
 from rqark_app.app import AgentApp
 from rqark_app.config.manager import ConfigManager
@@ -111,37 +112,59 @@ def build_storage(config_mgr: ConfigManager) -> CloudStorage | JSONLStorage:
     return JSONLStorage(config_mgr.config_path / 'sessions' / SESSION_SOURCE.lower())
 
 
-async def open_app(config_mgr: ConfigManager) -> tuple[AgentApp, list[Sop]]:
-    """Build the agent app and load everything a start needs.
+def build_app(config_mgr: ConfigManager) -> AgentApp:
+    """The agent app for this run, with the storage its transcripts live in."""
+    return AgentApp(config_mgr.providers, build_storage(config_mgr))
 
-    The stored sessions and the SOP list are two independent round trips, so
-    they are read at the same time instead of one after the other.
+
+async def load_workspace(config_mgr: ConfigManager, app: AgentApp) -> tuple[list[Restored], list[Sop]]:
+    """Read the stored sessions and the SOP list together.
+
+    Both are independent round trips to storage, so they run at the same time
+    rather than one after the other.
     """
-    app = AgentApp(config_mgr.providers, build_storage(config_mgr))
     _, sops = await asyncio.gather(app.session_mgr.load(), config_mgr.sop_manager.list())
-    return app, sops
+    return await restored_sessions(config_mgr, app.session_mgr), list(sops)
 
 
-async def _main() -> None:
-    config_mgr = ConfigManager(str(Path.home() / '.rqark'), source=SESSION_SOURCE)
+class Startup:
+    """What the background start holds on to, so the run can drain it afterwards."""
+
+    def __init__(self) -> None:
+        self.config_mgr: ConfigManager | None = None
+        self.app: AgentApp | None = None
+
+
+async def bootstrap(tui: AgentTUI, startup: Startup, config_dir: Path | None = None, cloud_transport: httpx.AsyncBaseTransport | None = None) -> tuple[list[Restored], list[Sop]]:
+    """Read the config, build the agent app and load the workspace, in the background.
+
+    Every step here answers a cloud round trip, so it runs after the interface
+    is on screen: the header, the input and the tab strip are painted first and
+    fill in as each answer arrives.
+    """
+    config_mgr = ConfigManager(str(config_dir or Path.home() / '.rqark'), cloud_transport=cloud_transport, source=SESSION_SOURCE)
     await config_mgr.load()
     agent_mgr = load_agent_manager(config_mgr)
+    app = build_app(config_mgr)
+    startup.config_mgr, startup.app = config_mgr, app
 
-    app, sops = await open_app(config_mgr)
-
-    tui = AgentTUI()
     tui.set_cloud_mode(config_mgr.cloud_client is not None)
     tui.set_agent_name(agent_mgr.agent.name)
     tui.set_model_name(app.provider_mgr.provider.name)
     tui.set_tools(agent_mgr.agent.tools)
-    tui.set_sops(sops)
     tui.set_session_factory(lambda key, session_id: EventHandler(app, tui, agent_mgr, config_mgr, session_id, key))
-
     await connect_agent_event_to_tui(app, tui)
 
-    tui.open_sessions(await restored_sessions(config_mgr, app.session_mgr))
+    return await load_workspace(config_mgr, app)
+
+
+async def _main() -> None:
+    startup = Startup()
+    tui = AgentTUI()
+    tui.load_startup(lambda: bootstrap(tui, startup))
     await tui.run()
-    await app.drain_memory_writes()
+    if startup.app is not None:
+        await startup.app.drain_memory_writes()
 
 
 def main():

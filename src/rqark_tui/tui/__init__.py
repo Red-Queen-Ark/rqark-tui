@@ -1,7 +1,7 @@
 import asyncio
 import contextlib
 from asyncio import AbstractEventLoop
-from collections.abc import Callable, Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from datetime import datetime
 
 from rich.markup import escape
@@ -44,6 +44,9 @@ SessionFactory = Callable[[str, str | None], SessionHandler]
 #: title, its last chunk and the id of the agent it was last talked to with.
 Restored = tuple[str, str, Sequence[Message | SummaryMessage], str]
 
+#: Reads what a start needs from slow storage: the restored sessions and the SOPs.
+StartupLoader = Callable[[], Awaitable[tuple[list[Restored], Sequence[Sop]]]]
+
 
 class AgentTUI(QuitHandler, App):
     """The rqark TUI: header bar, session tabs, message panes, popup selector and chat input.
@@ -81,6 +84,7 @@ class AgentTUI(QuitHandler, App):
         self._session_count = 0
         self._pending: list[Restored] = []
         self._session_factory: SessionFactory | None = None
+        self._startup_loader: StartupLoader | None = None
 
     def get_driver_class(self) -> type[Driver]:
         return tolerant_driver_class(super().get_driver_class())
@@ -108,6 +112,16 @@ class AgentTUI(QuitHandler, App):
         self._tool_keys = {tool.name: tool.display_key for tool in tools}
         for session in self._sessions.values():
             session.pane.set_tool_keys(self._tool_keys)
+
+    def load_startup(self, loader: StartupLoader) -> None:
+        """Read the stored sessions and the SOPs after the first frame.
+
+        Cloud storage answers in seconds, and a start that waits for it shows an
+        empty terminal for that whole time. With a loader set the interface is
+        painted first and the tabs are added when the answer arrives; a session
+        is only created up front when no loader is given.
+        """
+        self._startup_loader = loader
 
     def set_sops(self, sops: Sequence[Sop]) -> None:
         """Set the user-written SOPs the slash popup offers beside the built-in commands."""
@@ -154,12 +168,33 @@ class AgentTUI(QuitHandler, App):
         pending, self._pending = self._pending, []
         if pending:
             self._open_sessions(pending)
+        elif self._startup_loader is not None:
+            self.run_worker(self._run_startup(), name='startup', group='startup', exit_on_error=False)
         else:
             self.new_session()
         active = self.active_session
         if active is not None and active.agent_name:
             header.agent_name = active.agent_name
         self.query_one(ChatInput).focus()
+
+    async def _run_startup(self) -> None:
+        loader = self._startup_loader
+        if loader is None:
+            return
+        sessions: list[Restored] = []
+        sops: Sequence[Sop] = []
+        try:
+            sessions, sops = await loader()
+        except Exception as error:
+            self.notify(str(error), severity='error', timeout=8)
+        self.set_sops(sops)
+        if sessions:
+            self.open_sessions(sessions)
+            active = self.active_session
+            if active is not None and active.agent_name:
+                self.query_one(HeaderBar).agent_name = active.agent_name
+        elif not self._sessions:
+            self.new_session()
 
     def set_agent_name(self, name: str) -> None:
         self._agent_name = name
@@ -182,6 +217,11 @@ class AgentTUI(QuitHandler, App):
     def active_session(self) -> ChatSession | None:
         """The session whose transcript the pane is showing."""
         return self._sessions.get(self._active_key) if self._active_key is not None else None
+
+    @property
+    def sessions(self) -> list[ChatSession]:
+        """Every open session, in the order their tabs were added."""
+        return list(self._sessions.values())
 
     @property
     def active_key(self) -> str | None:
@@ -568,6 +608,8 @@ class AgentTUI(QuitHandler, App):
     def on_chat_input_submitted(self, event: ChatInput.Submitted) -> None:
         session = self.active_session
         if session is None:
+            self.query_one(ChatInput).text = event.text
+            self.notify('Still starting — please wait', severity='warning', timeout=4)
             return
         text = event.text
         images = event.images
