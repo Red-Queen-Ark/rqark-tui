@@ -3,7 +3,7 @@ import io
 from rich.console import Console
 from rich.markdown import Markdown
 
-from rqark_tui.tui.syntax import CODE_THEME, markdown, normalise_fences, resolve_language
+from rqark_tui.tui.syntax import code_theme, markdown, normalise_fences, resolve_language
 
 
 def _colours(source: str) -> set[str]:
@@ -57,7 +57,7 @@ def test_normalise_fences_leaves_prose_alone():
 def test_markdown_uses_the_transcript_code_theme():
     renderable = markdown('```python\nx = 1\n```')
     assert isinstance(renderable, Markdown)
-    assert renderable.code_theme == CODE_THEME
+    assert renderable.code_theme is code_theme()
 
 
 def test_an_unknown_fence_renders_without_raising():

@@ -5,7 +5,7 @@ from rqark_tui.tui.commands import COMMANDS, slash_entries
 
 
 def test_commands_table_is_complete():
-    assert [name for name, _ in COMMANDS] == ['/clear', '/close', '/compact', '/new', '/stop', '/models', '/agents']
+    assert [name for name, _ in COMMANDS] == ['/clear', '/close', '/compact', '/new', '/stop', '/models', '/agents', '/theme']
 
 
 @pytest.mark.parametrize('name,description', COMMANDS)

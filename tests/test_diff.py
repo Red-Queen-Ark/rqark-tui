@@ -6,6 +6,7 @@ from rich.color import Color
 from rich.console import Console
 
 from rqark_tui.tui import diff
+from rqark_tui.tui.theme import active_theme
 
 PATCH = """diff --git a/src/app.py b/src/app.py
 index 83ac1f2..9d0e4b1 100644
@@ -53,18 +54,18 @@ def test_looks_like_diff_rejects_a_hunk_without_file_headers():
 
 def test_render_colours_added_and_removed_lines():
     colours = _colours(PATCH)
-    assert colours["+    log.info('starting')"] == Color.parse(diff.DIFF_ADD).get_truecolor().hex
-    assert colours['-    run(config)'] == Color.parse(diff.DIFF_DEL).get_truecolor().hex
+    assert colours["+    log.info('starting')"] == Color.parse(active_theme().color('diff_add')).get_truecolor().hex
+    assert colours['-    run(config)'] == Color.parse(active_theme().color('diff_del')).get_truecolor().hex
 
 
 def test_render_colours_hunk_headers_as_divider_rows():
     colours = _colours(PATCH)
-    assert colours['@@ -12,7 +12,8 @@ def main() -> None:'] == Color.parse(diff.DIFF_HUNK).get_truecolor().hex
+    assert colours['@@ -12,7 +12,8 @@ def main() -> None:'] == Color.parse(active_theme().color('diff_hunk')).get_truecolor().hex
 
 
 def test_render_keeps_context_lines_neutral():
     colours = _colours(PATCH)
-    assert colours['     return None'] == Color.parse(diff.DIFF_CONTEXT).get_truecolor().hex
+    assert colours['     return None'] == Color.parse(active_theme().color('diff_context')).get_truecolor().hex
 
 
 def test_render_drops_the_header_of_a_single_file_patch():
@@ -83,7 +84,7 @@ def test_render_labels_each_file_of_a_multi_file_patch():
 
 def test_render_marks_the_no_newline_marker():
     colours = _colours('--- a/x\n+++ b/x\n@@ -1 +1 @@\n-a\n+b\n\\ No newline at end of file\n')
-    assert colours['\\ No newline at end of file'] == Color.parse(diff.DIFF_META).get_truecolor().hex
+    assert colours['\\ No newline at end of file'] == Color.parse(active_theme().color('diff_meta')).get_truecolor().hex
 
 
 def test_render_caps_a_large_patch_and_keeps_the_rest_for_the_copy_buffer():

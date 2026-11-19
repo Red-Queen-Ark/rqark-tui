@@ -10,6 +10,7 @@ COMMANDS: tuple[tuple[str, str], ...] = (
     ('/stop', 'Stop the current response'),
     ('/models', 'Switch model'),
     ('/agents', 'Switch agent'),
+    ('/theme', 'Switch colour theme'),
 )
 
 NAME_WIDTH = 9

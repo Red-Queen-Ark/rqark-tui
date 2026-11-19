@@ -6,9 +6,7 @@ multi-hunk patch reads as wall of text. This module detects that shape and
 paints it with dedicated colours, hunk separators and file markers, leaving
 every other tool result to the plain renderer.
 
-The colours are module constants until the theme module (issue #26) supplies
-``diff_add`` / ``diff_del`` / ``diff_hunk``; the names here match those tokens
-so the move is a rename.
+The colours come from the active theme's ``diff_*`` tokens.
 """
 
 import difflib
@@ -18,18 +16,16 @@ import re
 from rich.style import Style
 from rich.text import Text
 
-DIFF_ADD = '#87d787'
-
-DIFF_DEL = '#ff5f5f'
-
-DIFF_HUNK = '#5f87af'
-
-DIFF_META = '#757575'
-
-DIFF_CONTEXT = '#9e9e9e'
+from rqark_tui.tui.theme import active_theme
 
 #: Tools whose arguments carry the change, so a patch can be rebuilt from them.
 REBUILDABLE = ('edit_file', 'write_file')
+
+
+def _colour(token: str) -> str:
+    """The active theme's value for ``token``."""
+    return active_theme().color(token)
+
 
 #: Characters a rebuilt patch may hold. The arguments already keep the full text,
 #: so a huge write would otherwise be copied twice for a render that folds at
@@ -45,7 +41,8 @@ _HUNK = re.compile(r'^@@ -\d+(?:,\d+)? \+\d+(?:,\d+)? @@')
 
 _PREAMBLE = ('diff --git ', 'diff --cc ', 'diff --combined ', 'index ', 'new file mode ', 'deleted file mode ', 'old mode ', 'new mode ', 'similarity index ', 'dissimilarity index ', 'rename from ', 'rename to ', 'Binary files ')
 
-_ROW_STYLES = (('+', DIFF_ADD), ('-', DIFF_DEL))
+#: Token each side of a changed line is painted with.
+_ROW_TOKENS = (('+', 'diff_add'), ('-', 'diff_del'))
 
 
 def looks_like_diff(text: str) -> bool:
@@ -80,16 +77,16 @@ def _rows(text: str) -> list[tuple[str, str]]:
         line = lines[index]
         following = lines[index + 1] if index + 1 < len(lines) else ''
         if line.startswith('--- ') and following.startswith('+++ '):
-            rows.append((_file_path(following[4:]), DIFF_META))
+            rows.append((_file_path(following[4:]), _colour('diff_meta')))
             index += 2
             continue
         if line.startswith(_PREAMBLE):
             index += 1
             continue
         if line.startswith('@@'):
-            rows.append((line, DIFF_HUNK))
+            rows.append((line, _colour('diff_hunk')))
         elif line.startswith('\\'):
-            rows.append((line, DIFF_META))
+            rows.append((line, _colour('diff_meta')))
         else:
             rows.append((line, _row_colour(line)))
         index += 1
@@ -97,10 +94,10 @@ def _rows(text: str) -> list[tuple[str, str]]:
 
 
 def _row_colour(line: str) -> str:
-    for prefix, colour in _ROW_STYLES:
+    for prefix, token in _ROW_TOKENS:
         if line.startswith(prefix):
-            return colour
-    return DIFF_CONTEXT
+            return _colour(token)
+    return _colour('diff_context')
 
 
 def from_arguments(name: str, arguments: str) -> str | None:
@@ -160,7 +157,7 @@ def render(text: str) -> Text:
     rows = _rows(text)
     hidden = len(rows) - MAX_LINES
     if hidden > 0:
-        rows = [*rows[:MAX_LINES], (f'… {hidden} more line(s), copy for the full patch', DIFF_META)]
+        rows = [*rows[:MAX_LINES], (f'… {hidden} more line(s), copy for the full patch', _colour('diff_meta'))]
     out = Text()
     for position, (content, colour) in enumerate(rows):
         if position:

@@ -6,6 +6,13 @@ from textual.containers import Horizontal
 from textual.reactive import reactive
 from textual.widgets import Static
 
+from rqark_tui.tui.theme import active_theme
+
+
+def _colour(token: str) -> str:
+    """The active theme's value for ``token``."""
+    return active_theme().color(token)
+
 
 @cache
 def _package_version(distribution: str) -> str:
@@ -27,16 +34,14 @@ class HeaderBar(Horizontal):
 
     DEFAULT_CSS = """
     HeaderBar {
-        border: round #303030;
+        border: round;
         height: 3;
         padding: 0 2;
         background: transparent;
-        color: #808080;
     }
     HeaderBar > .header-line {
         width: 1fr;
         height: 1;
-        color: #808080;
     }
     HeaderBar > .header-cloud {
         width: auto;
@@ -50,7 +55,7 @@ class HeaderBar(Horizontal):
 
     def compose(self) -> ComposeResult:
         yield Static('', classes='header-line')
-        yield Static('[b #4FC1FF]Cloud[/]', classes='header-cloud')
+        yield Static(f'[b {_colour("accent")}]Cloud[/]', classes='header-cloud')
 
     def on_mount(self) -> None:
         self._update_line()
@@ -69,10 +74,13 @@ class HeaderBar(Horizontal):
             self.query_one('.header-line', Static).update(self._line())
 
     def _line(self) -> str:
-        title = '[#DC143C]RQArk TUI[/]'
-        version_part = f'[#808080]v{_package_version("rqark-tui")}[/]'
-        core = f'[#808080]Core:[/] [#808080]{_package_version("rqark-core")}[/]'
-        app = f'[#808080]App:[/] [#808080]{_package_version("rqark-app")}[/]'
-        agent = f'[#808080]Agent:[/] [#A020F0]{self.agent_name or "-"}[/]'
-        model = f'[#808080]Model:[/] [#4FC1FF]{self.model_name or "-"}[/]'
-        return f'[b]{title} {version_part} | {core} {app} | {agent} | {model}[/b]'
+        accent = _colour('accent')
+        agent = _colour('agent')
+        title = f'[{_colour("user")}]RQArk TUI[/]'
+        muted = _colour('fg_muted')
+        version_part = f'[{muted}]v{_package_version("rqark-tui")}[/]'
+        core = f'[{muted}]Core:[/] [{muted}]{_package_version("rqark-core")}[/]'
+        app = f'[{muted}]App:[/] [{muted}]{_package_version("rqark-app")}[/]'
+        agent_part = f'[{muted}]Agent:[/] [{agent}]{self.agent_name or "-"}[/]'
+        model = f'[{muted}]Model:[/] [{accent}]{self.model_name or "-"}[/]'
+        return f'[b]{title} {version_part} | {core} {app} | {agent_part} | {model}[/b]'

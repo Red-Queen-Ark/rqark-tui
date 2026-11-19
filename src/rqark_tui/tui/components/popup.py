@@ -14,12 +14,10 @@ class PopupSelector(Static):
     DEFAULT_CSS = """
     PopupSelector {
         display: none;
-        border: round #303030;
-        background: #1a1a1a;
+        border: round;
         padding: 0 2;
         height: auto;
         max-height: 10;
-        color: #e0e0e0;
     }
     """
 

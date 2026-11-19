@@ -22,6 +22,7 @@ from rqark_tui.tui.components.quit_handler import QuitHandler
 from rqark_tui.tui.components.session import SessionTabs
 from rqark_tui.tui.driver import tolerant_driver_class
 from rqark_tui.tui.session import ChatSession, SessionHandler, session_uuid
+from rqark_tui.tui.theme import active_theme, load_theme, resolve_name, textual_theme, theme_names, use_theme
 
 #: Slash command the TUI answers itself: closing the session on screen.
 CLOSE_COMMAND = '/close'
@@ -31,6 +32,9 @@ NEW_COMMAND = '/new'
 
 #: Slash command that runs long enough to need a status line while it works.
 COMPACT_COMMAND = '/compact'
+
+#: Slash command the TUI answers itself: switching palette.
+THEME_COMMAND = '/theme'
 
 #: Builds the per-session bridge to the agent app: ``(session key, app session id)``.
 SessionFactory = Callable[[str, str | None], SessionHandler]
@@ -51,13 +55,20 @@ class AgentTUI(QuitHandler, App):
 
     AUTO_FOCUS = 'ChatInput'
 
+    #: Every colour the widgets draw lives in this sheet, named by ``$rq-*``
+    #: tokens; the values come from the theme file (see ``theme.py``).
+    CSS_PATH = 'styles/app.tcss'
+
     async def run(
         self, *, headless: bool = False, inline: bool = False, inline_no_clear: bool = False, mouse: bool = True, size: tuple[int, int] | None = None, auto_pilot: AutopilotCallbackType | None = None, loop: AbstractEventLoop | None = None
     ) -> None:
         await super().run_async(headless=headless, inline=inline, inline_no_clear=inline_no_clear, mouse=mouse, size=size, auto_pilot=auto_pilot)
 
-    def __init__(self) -> None:
+    def __init__(self, theme: str | None = None) -> None:
+        use_theme(load_theme(resolve_name(theme)))
         super().__init__()
+        self.register_theme(textual_theme(active_theme()))
+        self.theme = textual_theme(active_theme()).name
         self._agent_name = ''
         self._model_name = ''
         self._cloud = False
@@ -72,6 +83,25 @@ class AgentTUI(QuitHandler, App):
 
     def get_driver_class(self) -> type[Driver]:
         return tolerant_driver_class(super().get_driver_class())
+
+    def get_css_variables(self) -> dict[str, str]:
+        """Textual CSS variables: the active theme's tokens as ``$rq-*``."""
+        return {**super().get_css_variables(), **active_theme().variables()}
+
+    def apply_theme(self, name: str) -> None:
+        """Switch to the theme called ``name``, repainting the whole interface.
+
+        Raises:
+            ThemeError: the theme does not exist.
+        """
+        use_theme(load_theme(name))
+        self.register_theme(textual_theme(active_theme()))
+        self.theme = textual_theme(active_theme()).name
+        if self.is_running:
+            self.screen.styles.background = active_theme().color('bg')
+            self.refresh_css()
+        for session in self._sessions.values():
+            session.pane.repaint()
 
     def set_tools(self, tools: Sequence[BaseTool]) -> None:
         self._tool_keys = {tool.name: tool.display_key for tool in tools}
@@ -115,7 +145,7 @@ class AgentTUI(QuitHandler, App):
         yield ChatInput()
 
     def on_mount(self) -> None:
-        self.screen.styles.background = '#141414'
+        self.screen.styles.background = active_theme().color('bg')
         header = self.query_one(HeaderBar)
         header.agent_name = self._agent_name
         header.model_name = self._model_name
@@ -547,6 +577,9 @@ class AgentTUI(QuitHandler, App):
         if command == CLOSE_COMMAND:
             self.close_active_session()
             return
+        if command == THEME_COMMAND:
+            self._switch_theme(text.partition(' ')[2].strip())
+            return
         if command == COMPACT_COMMAND and session.busy:
             self.notify('Still processing — please wait', severity='warning', timeout=4)
             return
@@ -562,6 +595,17 @@ class AgentTUI(QuitHandler, App):
         session.busy = True
         self.query_one(SessionTabs).set_busy(session.key, True)
         session.worker = self.run_worker(self._run_chat(session, text, images), name=f'chat-{session.key}', group='agent', exit_on_error=False)
+
+    def _switch_theme(self, name: str) -> None:
+        names = theme_names()
+        if not name:
+            self.notify(f'Theme: {active_theme().name} (choose {", ".join(names)})', timeout=4)
+            return
+        if name not in names:
+            self.notify(f'Unknown theme {name}; choose {", ".join(names)}', severity='warning', timeout=4)
+            return
+        self.apply_theme(name)
+        self.notify(f'Theme: {name}', timeout=3)
 
     async def _run_chat(self, session: ChatSession, text: str, images: list[str]) -> None:
         handler = session.handler

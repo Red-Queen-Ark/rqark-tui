@@ -47,12 +47,10 @@ class YesNoDialog(ModalScreen[bool]):
         width: auto;
         max-width: 70%;
         height: auto;
-        border: round #4FC1FF;
-        background: #1A1A1A;
+        border: round;
         padding: 1 2;
     }
     #dialog Label {
-        color: #e0e0e0;
         text-align: center;
         padding: 0 2 1 2;
         width: 100%;
@@ -67,9 +65,6 @@ class YesNoDialog(ModalScreen[bool]):
     }
     #buttons Button:focus {
         text-style: bold;
-        background-tint: #4FC1FF 25%;
-        outline-left: solid #4FC1FF;
-        outline-right: solid #4FC1FF;
     }
     """
 
