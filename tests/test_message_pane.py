@@ -13,8 +13,9 @@ from textual.strip import Strip
 
 from rqark_tui.tui.components import main as main_module
 from rqark_tui.tui.components.main import MessagePane, _apply_selection_style, _crop_plain
+from rqark_tui.tui.theme import active_theme
 
-SELECTION_COLOR = Color.parse(main_module._SELECTION_BG)
+SELECTION_COLOR = Color.parse(active_theme().color('selection'))
 
 
 class PaneApp(App[None]):
@@ -942,7 +943,7 @@ async def test_revert_button_sits_left_of_copy_in_orange_on_a_user_message():
         head = pane._header_row(pane._blocks[0], 0)
         assert head.plain.index('[revert]') < head.plain.index('[copy]')
         revert_span = next(span for span in head.spans if 'revert' in head.plain[span.start : span.end])
-        assert revert_span.style.color == Color.parse(main_module._REVERT)
+        assert revert_span.style.color == Color.parse(active_theme().color('warning'))
         assert revert_span.style.meta['@click'] == 'revert_message(0)'
 
 
@@ -1268,8 +1269,8 @@ async def test_diff_tool_result_renders_coloured_rows_when_expanded():
         assert 'added one' not in rendered_text(pane)
         pane.action_toggle_section(0, 1)
         assert 'added one' in rendered_text(pane)
-        add = Color.parse(main_module.diff.DIFF_ADD).get_truecolor().hex
-        delete = Color.parse(main_module.diff.DIFF_DEL).get_truecolor().hex
+        add = Color.parse(active_theme().color('diff_add')).get_truecolor().hex
+        delete = Color.parse(active_theme().color('diff_del')).get_truecolor().hex
         assert add in line_colours(pane, '+added one')
         assert delete in line_colours(pane, '-drop')
 
@@ -1310,7 +1311,7 @@ async def test_edit_result_is_rendered_as_a_diff_rebuilt_from_the_arguments():
         assert section.text == 'Successfully edited src/app.py'
         pane.action_toggle_section(0, 1)
         assert '-drop' in rendered_text(pane)
-        add = Color.parse(main_module.diff.DIFF_ADD).get_truecolor().hex
+        add = Color.parse(active_theme().color('diff_add')).get_truecolor().hex
         assert add in line_colours(pane, '+added one')
 
 

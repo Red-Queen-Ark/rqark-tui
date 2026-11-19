@@ -5,6 +5,8 @@ from textual.await_complete import AwaitComplete
 from textual.message import Message
 from textual.widgets import Tab, Tabs
 
+from rqark_tui.tui.theme import active_theme
+
 NEW_SESSION_TAB_ID = 'new-session'
 
 #: The close affordance appended to a session tab's label.
@@ -30,7 +32,7 @@ class SessionTab(Tab):
 
     @staticmethod
     def _labelled(title: str) -> Text:
-        return Text.assemble((title, Style()), (CLOSE_MARK, Style(color='#808080')))
+        return Text.assemble((title, Style()), (CLOSE_MARK, Style(color=active_theme().color('fg_muted'))))
 
     def take_close_click(self) -> bool:
         """True when the last click landed on the close mark (and clears the flag)."""
@@ -55,32 +57,9 @@ class SessionTabs(Tabs):
     DEFAULT_CSS = """
     SessionTabs {
         height: 4;
-        border: round #303030;
+        border: round;
         padding: 0 2;
         background: transparent;
-
-        & Tab {
-            color: #808080;
-            background: transparent;
-
-            &:hover {
-                color: #e0e0e0;
-            }
-
-            &.-busy {
-                color: #FFD700;
-                text-style: bold;
-            }
-
-            &.-active {
-                color: #4FC1FF;
-                text-style: bold;
-            }
-
-            &.-add {
-                color: #4FC1FF;
-            }
-        }
     }
     """
 

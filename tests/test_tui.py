@@ -13,6 +13,7 @@ from rqark_tui.tui.components.header import HeaderBar
 from rqark_tui.tui.components.main import MessagePane
 from rqark_tui.tui.components.popup import PopupSelector
 from rqark_tui.tui.components.session import SessionTabs
+from rqark_tui.tui.theme import active_theme, theme_names
 
 PLAN_ITEM = PlanItem(id='1', content='do the thing', status='pending')
 
@@ -515,11 +516,30 @@ async def test_auto_focus_points_at_the_chat_input():
     assert AgentTUI.AUTO_FOCUS == 'ChatInput'
 
 
-async def test_screen_background_is_the_dark_theme_colour():
+async def test_screen_background_is_the_theme_background():
     tui = AgentTUI()
     async with tui.run_test(size=(40, 100)) as pilot:
         await pilot.pause()
-        assert tui.screen.styles.background.hex == '#141414'
+        assert tui.screen.styles.background.hex.lower() == active_theme().color('bg')
+
+
+async def test_every_theme_paints_the_screen_and_survives_a_switch():
+    for name in theme_names():
+        tui = AgentTUI(theme=name)
+        async with tui.run_test(size=(40, 100)) as pilot:
+            await pilot.pause()
+            assert active_theme().name == name
+            assert tui.screen.styles.background.hex.lower() == active_theme().color('bg')
+
+
+async def test_apply_theme_repaints_the_screen():
+    tui = AgentTUI(theme='redqueen')
+    async with tui.run_test(size=(40, 100)) as pilot:
+        await pilot.pause()
+        tui.apply_theme('matrix')
+        await pilot.pause()
+        assert active_theme().name == 'matrix'
+        assert tui.screen.styles.background.hex == '#000703'
 
 
 async def test_submitted_images_reach_the_handler(tmp_path, monkeypatch):

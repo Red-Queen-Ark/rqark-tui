@@ -1,0 +1,131 @@
+Screen {
+    background: $rq-bg;
+    color: $rq-fg;
+}
+
+HeaderBar {
+    border: round $rq-border;
+    height: 3;
+    padding: 0 2;
+    background: transparent;
+    color: $rq-fg-muted;
+}
+
+HeaderBar > .header-line {
+    width: 1fr;
+    height: 1;
+    color: $rq-fg-muted;
+}
+
+HeaderBar > .header-cloud {
+    width: auto;
+    height: 1;
+    display: none;
+    color: $rq-accent;
+}
+
+HeaderBar.cloud > .header-cloud {
+    display: block;
+}
+
+SessionTabs {
+    height: 4;
+    border: round $rq-border;
+    padding: 0 2;
+    background: transparent;
+
+    & Tab {
+        color: $rq-fg-muted;
+        background: transparent;
+
+        &:hover {
+            color: $rq-fg;
+        }
+
+        &.-busy {
+            color: $rq-warning;
+            text-style: bold;
+        }
+
+        &.-active {
+            color: $rq-accent;
+            text-style: bold;
+        }
+
+        &.-add {
+            color: $rq-accent;
+        }
+    }
+}
+
+MessagePane {
+    height: 1fr;
+    border: round $rq-border;
+    padding: 1 2;
+    overflow-x: hidden;
+    background: $rq-bg;
+}
+
+MessagePane:focus {
+    background-tint: transparent;
+    border: round $rq-border;
+}
+
+PopupSelector {
+    display: none;
+    border: round $rq-border;
+    background: $rq-surface;
+    padding: 0 2;
+    height: auto;
+    max-height: 10;
+    color: $rq-fg;
+}
+
+ChatInput {
+    border: round $rq-border;
+    margin: 0 0;
+    padding: 0 2;
+    background: transparent;
+    color: $rq-fg;
+}
+
+ChatInput:focus {
+    border: round $rq-accent;
+}
+
+YesNoDialog {
+    align: center middle;
+}
+
+#dialog {
+    width: auto;
+    max-width: 70%;
+    height: auto;
+    border: round $rq-accent;
+    background: $rq-surface;
+    padding: 1 2;
+}
+
+#dialog Label {
+    color: $rq-fg;
+    text-align: center;
+    padding: 0 2 1 2;
+    width: 100%;
+}
+
+#buttons {
+    height: auto;
+    align: center middle;
+}
+
+#buttons Button {
+    margin: 1 2;
+    min-width: 10;
+}
+
+#buttons Button:focus {
+    text-style: bold;
+    background-tint: $rq-accent 25%;
+    outline-left: solid $rq-accent;
+    outline-right: solid $rq-accent;
+}

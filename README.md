@@ -93,6 +93,14 @@ tools:
 
 可用欄位：`name`、`model_name`、`api_key`、`api_base`、`priority`（小者優先），以及選擇性的 `reasoning_effort`、`thinking`、`temperature`、`top_p`、`seed`、`frequency_penalty`、`presence_penalty`、`combine`。provider 依 `priority` 升序使用，失敗自動輪替。
 
+### 主題
+
+配色集中於 `src/rqark_tui/tui/themes/` 下的 JSON 檔，一個檔案一個主題。每個檔案定義同一組語義 token（`bg`、`surface`、`fg`、`accent`、`user`、`agent`、`tool`、`error`、`selection`、`diff_add`、`code_keyword` 等），介面樣式與 Python 渲染器只讀 token 名稱，不寫死色值。新增主題即放入一個 JSON 檔，程式碼無需改動。
+
+內建 `redqueen`、`eva`、`matrix` 三個深色主題，色值取自 `rqark-agent-cloud-web-ui` 的 Dark Theme。
+
+選擇次序：`/theme <名稱>`、環境變數 `RQARK_THEME`、預設 `redqueen`。`/theme` 不帶參數時列出可用主題；切換即時生效，重啟後回到環境變數或預設值。
+
 ## 使用
 
 ```bash
@@ -151,6 +159,7 @@ rqark-tui
 | `/stop` | 停止目前回應（已收到的部分內容會存下） |
 | `/models` | 切換 model（picker 顯示目前可用 provider） |
 | `/agents` | 切換 agent（只影響目前 session；預設 agent 請在 `rqark-data-cloud-web-ui` 改） |
+| `/theme` | 切換配色主題（不帶參數時列出可用主題） |
 
 回應進行中會擋下一般訊息（顯示 "Still processing — please wait"），但斜線指令不受限制，`/stop` 即逃生門。
 

@@ -19,22 +19,21 @@ from textual.widgets import RichLog
 from rqark_tui.tui import diff
 from rqark_tui.tui.clipboard import write_system_clipboard
 from rqark_tui.tui.syntax import markdown
-
-#: Background colour used to paint the selected cells (macOS-dark-ish blue).
-_SELECTION_BG = '#2E5E8C'
+from rqark_tui.tui.theme import active_theme
 
 #: Sentinel column meaning "to the end of the line" (used for select-all).
 _END_OF_LINE = 10**9
 
-_LABEL_COLORS = {'user': '#DC143C', 'agent': '#A020F0', 'tools': '#A020F0', 'system': '#808080', 'status': '#4FC1FF'}
-
-_ACCENT = '#4FC1FF'
-
-#: Colour of the ``[revert]`` button on user messages.
-_REVERT = '#FFA500'
+#: Token each transcript label is painted with.
+_LABEL_TOKENS = {'user': 'user', 'agent': 'agent', 'tools': 'tool', 'system': 'system', 'status': 'accent'}
 
 #: Characters of a subagent id kept in the header label.
 _AGENT_ID_PREFIX = 8
+
+
+def _colour(token: str) -> str:
+    """The active theme's value for ``token``."""
+    return active_theme().color(token)
 
 
 def _agent_label(agent_id: str, path: tuple[str, ...]) -> str:
@@ -104,7 +103,7 @@ def _crop_plain(text: str, start_cell: int, end_cell: int) -> str:
 
 def _apply_selection_style(strip: Strip, start: int, end: int) -> Strip:
     """Return a copy of ``strip`` with the selection background on cells ``[start, end)``."""
-    selection_style = Style(bgcolor=_SELECTION_BG)
+    selection_style = Style(bgcolor=_colour('selection'))
     segments: list[Segment] = []
     col = 0
     for segment in strip._segments:
@@ -188,14 +187,9 @@ class MessagePane(RichLog):
     DEFAULT_CSS = """
     MessagePane {
         height: 1fr;
-        border: round #303030;
+        border: round;
         padding: 1 2;
         overflow-x: hidden;
-        background: #141414;
-    }
-    MessagePane:focus {
-        background-tint: transparent;
-        border: round #303030;
     }
     """
 
@@ -252,6 +246,15 @@ class MessagePane(RichLog):
         for block in self._blocks:
             for section in block.sections:
                 section.display = None
+
+    def repaint(self) -> None:
+        """Re-render the transcript with the active theme's colours."""
+        for block in self._blocks:
+            for section in block.sections:
+                section.display = None
+        self._prewarm.clear()
+        if self._blocks:
+            self._rebuild()
 
     def on_mount(self) -> None:
         self._flush_timer = self.set_interval(self.FLUSH_INTERVAL_SECONDS, self._flush_now)
@@ -874,13 +877,13 @@ class MessagePane(RichLog):
                 else:
                     rows.append(markdown(section.text))
             elif section.text:
-                rows.append(Text(section.text, style=Style(color='#ffffff')))
+                rows.append(Text(section.text, style=Style(color=_colour('fg_strong'))))
         elif section.mode == 'image':
-            rows.append(Text(section.text, style=Style(color=_ACCENT)))
+            rows.append(Text(section.text, style=Style(color=_colour('accent'))))
         elif section.mode == 'think':
             rows.append(self._accordion_row(section, idx, si))
             if not section.collapsed and section.text:
-                rows.append(Text(section.text, style=Style(dim=True, italic=True, color='#9a9a9a')))
+                rows.append(Text(section.text, style=Style(dim=True, italic=True, color=_colour('fg_dim'))))
         elif section.mode == 'tool':
             rows.append(self._tool_row(section))
         elif section.mode == 'result':
@@ -889,15 +892,15 @@ class MessagePane(RichLog):
                 if section.diff:
                     rows.append(diff.render(section.patch))
                 else:
-                    rows.append(Text(section.text, style=Style(dim=True, color='#9e9e9e')))
+                    rows.append(Text(section.text, style=Style(dim=True, color=_colour('fg_dim'))))
         elif section.mode == 'error':
             if section.text:
-                rows.append(Text(section.text, style=Style(color='#DC143C')))
+                rows.append(Text(section.text, style=Style(color=_colour('error'))))
         elif section.mode == 'status':
             if section.text:
-                rows.append(Text(section.text, style=Style(color=_ACCENT, italic=True)))
+                rows.append(Text(section.text, style=Style(color=_colour('accent'), italic=True)))
         elif section.text:
-            rows.append(Text(section.text, style=Style(dim=True, color='#c0c0c0')))
+            rows.append(Text(section.text, style=Style(dim=True, color=_colour('fg'))))
         return rows
 
     def _emit_rows(self, rows: list[RenderableType | _Rendered], width: int) -> None:
@@ -910,15 +913,15 @@ class MessagePane(RichLog):
     def _header_row(self, block: _Block, idx: int) -> Text:
         label = self._block_label(block)
         head = Text()
-        head.append(f'{label} ', Style(bold=True, color=_LABEL_COLORS.get(block.kind, '#808080')))
+        head.append(f'{label} ', Style(bold=True, color=_colour(_LABEL_TOKENS.get(block.kind, 'fg_muted'))))
         dt = block.time
         revert = self._revertible(block)
         tail = cell_len(dt) + len(' [copy]') + (len(' [revert]') if revert else 0)
         head.append(' ' * self._pad_to(cell_len(label) + 1 + tail))
-        head.append(dt, Style(dim=True, color='#808080'))
+        head.append(dt, Style(dim=True, color=_colour('fg_muted')))
         if revert:
-            head.append(' [revert]', Style(color=_REVERT, meta={'@click': f'revert_message({idx})'}))
-        head.append(' [copy]', Style(color=_ACCENT, meta={'@click': f'copy_message({idx})'}))
+            head.append(' [revert]', Style(color=_colour('warning'), meta={'@click': f'revert_message({idx})'}))
+        head.append(' [copy]', Style(color=_colour('accent'), meta={'@click': f'copy_message({idx})'}))
         width = self._render_width or self.scrollable_content_region.width
         if head.cell_len > width:
             head.right_crop(len(head.plain) - len(_crop_plain(head.plain, 0, width)))
@@ -979,20 +982,20 @@ class MessagePane(RichLog):
 
     def _tool_row(self, section: _Section) -> Text:
         row = Text()
-        row.append('use tool ', Style(color='#c8a000'))
-        row.append(section.name, Style(bold=True, color='#FFD700'))
+        row.append('use tool ', Style(color=_colour('tool_prefix')))
+        row.append(section.name, Style(bold=True, color=_colour('tool')))
         display = self._tool_display(section)
         if display:
-            row.append(f' {display}', Style(dim=True, color='#8a6d00'))
+            row.append(f' {display}', Style(dim=True, color=_colour('tool_dim')))
         return row
 
     def _accordion_row(self, section: _Section, idx: int, si: int, prefix: str = '') -> Text:
         marker = '▶' if section.collapsed else '▼'
         row = Text()
-        row.append(f'{marker} {prefix}{section.name}', Style(bold=True, color='#757575', meta={'@click': f'toggle_section({idx},{si})'}))
+        row.append(f'{marker} {prefix}{section.name}', Style(bold=True, color=_colour('fg_muted'), meta={'@click': f'toggle_section({idx},{si})'}))
         if section.diff and section.patch:
             added, removed = diff.counts(section.patch)
-            row.append(f' +{added} -{removed}', Style(dim=True, color='#8a8a8a'))
+            row.append(f' +{added} -{removed}', Style(dim=True, color=_colour('fg_dim')))
         return row
 
     def action_copy_message(self, message_index: int) -> None:
