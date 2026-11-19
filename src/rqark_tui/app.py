@@ -4,6 +4,7 @@ from pathlib import Path
 import httpx
 from rqark_app.agent.manager import AgentManager
 from rqark_app.app import AgentApp
+from rqark_app.cloud.client import RQArkDataCloudClient
 from rqark_app.config.manager import ConfigManager
 from rqark_app.session.manager import SessionManager
 from rqark_app.session.storage import CloudStorage, JSONLStorage
@@ -15,8 +16,34 @@ from rqark_core.types.tool import PlanItem
 
 from rqark_tui.tui import AgentTUI, Restored
 from rqark_tui.tui.event_handler import EventHandler
+from rqark_tui.tui.theme import theme_names
 
 SESSION_SOURCE = 'TUI'
+
+#: The account setting that holds the theme this client last used.
+THEME_SETTING = 'tui.theme'
+
+
+def theme_setting(client: RQArkDataCloudClient):
+    """The callbacks that read and write the theme in the account's settings.
+
+    The theme belongs to the person, not to a deployment, so it lives in the
+    user config rather than the system config: the system one is shared by every
+    account and only a superuser may write it.
+    """
+
+    async def read() -> str | None:
+        for entry in await client.list_user_config():
+            if isinstance(entry, dict) and entry.get('key') == THEME_SETTING:
+                value = entry.get('value')
+                if isinstance(value, str) and value in theme_names():
+                    return value
+        return None
+
+    async def write(name: str) -> None:
+        await client.set_user_config(THEME_SETTING, name)
+
+    return read, write
 
 
 async def restored_sessions(config_mgr: ConfigManager, session_mgr: SessionManager) -> list[Restored]:
@@ -155,6 +182,17 @@ async def bootstrap(tui: AgentTUI, startup: Startup, config_dir: Path | None = N
 
     session_mgr = SessionManager(build_storage(config_mgr))
     pending = asyncio.gather(session_mgr.load(remembered_ids(config_mgr)), config_mgr.sop_manager.list())
+
+    if config_mgr.cloud_client is not None:
+        read_theme, write_theme = theme_setting(config_mgr.cloud_client)
+        tui.set_theme_saver(write_theme)
+        try:
+            stored = await read_theme()
+        except Exception as error:
+            tui.notify(f'Could not read the theme: {error}', severity='warning', timeout=6)
+        else:
+            if stored is not None:
+                tui.apply_theme(stored)
 
     await config_mgr.load_catalog()
     agent_mgr = load_agent_manager(config_mgr)

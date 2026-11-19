@@ -47,6 +47,9 @@ Restored = tuple[str, str, Sequence[Message | SummaryMessage], str]
 #: Reads what a start needs from slow storage: the restored sessions and the SOPs.
 StartupLoader = Callable[[], Awaitable[tuple[list[Restored], Sequence[Sop]]]]
 
+#: Stores the theme the user picked, so the next run starts with it.
+ThemeSaver = Callable[[str], Awaitable[None]]
+
 
 class AgentTUI(QuitHandler, App):
     """The rqark TUI: header bar, session tabs, message panes, popup selector and chat input.
@@ -86,6 +89,7 @@ class AgentTUI(QuitHandler, App):
         self._session_factory: SessionFactory | None = None
         self._startup_loader: StartupLoader | None = None
         self._startup_running = False
+        self._theme_saver: ThemeSaver | None = None
         # The tab made at mount while the loader runs, so the layout is complete
         # before storage answers. It is dropped once the stored tabs arrive, unless
         # the user has already typed into it.
@@ -98,8 +102,15 @@ class AgentTUI(QuitHandler, App):
         """Textual CSS variables: the active theme's tokens as ``$rq-*``."""
         return {**super().get_css_variables(), **active_theme().variables()}
 
-    def apply_theme(self, name: str) -> None:
+    def set_theme_saver(self, saver: ThemeSaver) -> None:
+        """Set how a theme the user picked is remembered for the next run."""
+        self._theme_saver = saver
+
+    def apply_theme(self, name: str, *, persist: bool = False) -> None:
         """Switch to the theme called ``name``, repainting the whole interface.
+
+        ``persist`` asks the configured saver to store the choice; it is left off
+        for the theme read back at start, which is already stored.
 
         Raises:
             ThemeError: the theme does not exist.
@@ -112,6 +123,21 @@ class AgentTUI(QuitHandler, App):
             self.refresh_css()
         for session in self._sessions.values():
             session.pane.repaint()
+        if persist:
+            self._save_theme(name)
+
+    def _save_theme(self, name: str) -> None:
+        """Store ``name`` through the saver, reporting a failure without undoing the switch."""
+        saver = self._theme_saver
+        if saver is None:
+            return
+        self.run_worker(self._run_save_theme(saver, name), name='save-theme', group='theme', exit_on_error=False)
+
+    async def _run_save_theme(self, saver: ThemeSaver, name: str) -> None:
+        try:
+            await saver(name)
+        except Exception as error:
+            self.notify(f'Could not save the theme: {error}', severity='warning', timeout=6)
 
     def set_tools(self, tools: Sequence[BaseTool]) -> None:
         self._tool_keys = {tool.name: tool.display_key for tool in tools}
@@ -684,7 +710,7 @@ class AgentTUI(QuitHandler, App):
         if name not in names:
             self.notify(f'Unknown theme {name}; choose {", ".join(names)}', severity='warning', timeout=4)
             return
-        self.apply_theme(name)
+        self.apply_theme(name, persist=True)
         self.notify(f'Theme: {name}', timeout=3)
 
     async def _pick_theme(self) -> None:
@@ -695,7 +721,7 @@ class AgentTUI(QuitHandler, App):
         index = names.index(current) if current in names else 0
         entry = await self.pick(entries, title='Theme', index=index)
         if entry is not None:
-            self.apply_theme(entry[1])
+            self.apply_theme(entry[1], persist=True)
 
     async def _run_chat(self, session: ChatSession, text: str, images: list[str]) -> None:
         handler = session.handler
