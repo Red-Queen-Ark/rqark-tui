@@ -6,6 +6,7 @@ from rqark_app.app import AgentApp
 from rqark_app.config.manager import ConfigManager
 from rqark_app.session.manager import SessionManager
 from rqark_app.session.storage import CloudStorage, JSONLStorage
+from rqark_app.sop.types import Sop
 from rqark_app.types.event import ProviderSwitch
 from rqark_core.types.chat import Chunk, Message, ToolMessage, UserMessage
 from rqark_core.types.event import AgentPayload
@@ -103,25 +104,37 @@ async def connect_agent_event_to_tui(app: AgentApp, tui: AgentTUI):
         tui.set_model_name(ev.payload.new.model_name)
 
 
+def build_storage(config_mgr: ConfigManager) -> CloudStorage | JSONLStorage:
+    """Where this run keeps its transcripts: the data cloud when configured, else local files."""
+    if config_mgr.cloud_client is not None:
+        return CloudStorage(config_mgr.cloud_client, source=SESSION_SOURCE)
+    return JSONLStorage(config_mgr.config_path / 'sessions' / SESSION_SOURCE.lower())
+
+
+async def open_app(config_mgr: ConfigManager) -> tuple[AgentApp, list[Sop]]:
+    """Build the agent app and load everything a start needs.
+
+    The stored sessions and the SOP list are two independent round trips, so
+    they are read at the same time instead of one after the other.
+    """
+    app = AgentApp(config_mgr.providers, build_storage(config_mgr))
+    _, sops = await asyncio.gather(app.session_mgr.load(), config_mgr.sop_manager.list())
+    return app, sops
+
+
 async def _main() -> None:
     config_mgr = ConfigManager(str(Path.home() / '.rqark'), source=SESSION_SOURCE)
     await config_mgr.load()
     agent_mgr = load_agent_manager(config_mgr)
 
-    if config_mgr.cloud_client is not None:
-        storage = CloudStorage(config_mgr.cloud_client, source=SESSION_SOURCE)
-    else:
-        storage = JSONLStorage(config_mgr.config_path / 'sessions' / SESSION_SOURCE.lower())
-
-    app = AgentApp(config_mgr.providers, storage)
-    await app.session_mgr.load()
+    app, sops = await open_app(config_mgr)
 
     tui = AgentTUI()
     tui.set_cloud_mode(config_mgr.cloud_client is not None)
     tui.set_agent_name(agent_mgr.agent.name)
     tui.set_model_name(app.provider_mgr.provider.name)
     tui.set_tools(agent_mgr.agent.tools)
-    tui.set_sops(await config_mgr.sop_manager.list())
+    tui.set_sops(sops)
     tui.set_session_factory(lambda key, session_id: EventHandler(app, tui, agent_mgr, config_mgr, session_id, key))
 
     await connect_agent_event_to_tui(app, tui)

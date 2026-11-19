@@ -139,7 +139,6 @@ def textual_theme(theme: Theme) -> TextualTheme:
     )
 
 
-
 _active: Theme = load_theme(resolve_name())
 
 
