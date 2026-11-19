@@ -1350,7 +1350,7 @@ wheels = [
 
 [[package]]
 name = "rqark-app"
-version = "0.13.3"
+version = "0.13.5"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "certifi" },
@@ -1359,9 +1359,9 @@ dependencies = [
     { name = "pyyaml" },
     { name = "rqark-core" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/1e/c7/b0c7fa1e4f42204510d2a5dc60ead65956dac24858396405ed85cb0d5845/rqark_app-0.13.3.tar.gz", hash = "sha256:2bc16b9f47c55b43b69f3d5a2855a62a10b44e5767b16fe4de43ca49b86de967", size = 152101, upload-time = "2026-11-19T16:19:29.809Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/b5/3f/28339c039cb5049025152e99ba511aecb2d10e69b2253d4e75ba1ced9da3/rqark_app-0.13.5.tar.gz", hash = "sha256:2b139b47533a72fad7c7187ec2cff2f97fb9c0bcf92e28252a7cab714c364bca", size = 153265, upload-time = "2026-11-19T16:39:11.812Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/af/eb/8df4095ed0b2ef20ffe9faebbf39325bc4f135e846e3ff8e45da774a9053/rqark_app-0.13.3-py3-none-any.whl", hash = "sha256:1b3b1260415373c5d7ba432c87a7fa471720b3477b562191ae9e1d9a4b3251e0", size = 51740, upload-time = "2026-11-19T16:19:27.818Z" },
+    { url = "https://files.pythonhosted.org/packages/20/ac/397082ad86c114ac72ace1766d2af10b567917a4ee1d37b55519f2858af3/rqark_app-0.13.5-py3-none-any.whl", hash = "sha256:5c3cd9551e2e56b0a8bd8f923a591fc5fdcc199d4c87be2e9508625472008994", size = 52451, upload-time = "2026-11-19T16:39:10.052Z" },
 ]
 
 [[package]]
@@ -1403,7 +1403,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "rqark-app", specifier = "==0.13.3" },
+    { name = "rqark-app", specifier = "==0.13.5" },
     { name = "rqark-core", specifier = "==0.5.4" },
     { name = "textual", specifier = ">=8.2.8" },
     { name = "wcwidth", specifier = ">=0.8.3" },

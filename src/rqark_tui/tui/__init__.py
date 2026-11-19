@@ -85,6 +85,10 @@ class AgentTUI(QuitHandler, App):
         self._pending: list[Restored] = []
         self._session_factory: SessionFactory | None = None
         self._startup_loader: StartupLoader | None = None
+        # The tab made at mount while the loader runs, so the layout is complete
+        # before storage answers. It is dropped once the stored tabs arrive, unless
+        # the user has already typed into it.
+        self._placeholder_key: str | None = None
 
     def get_driver_class(self) -> type[Driver]:
         return tolerant_driver_class(super().get_driver_class())
@@ -168,10 +172,11 @@ class AgentTUI(QuitHandler, App):
         pending, self._pending = self._pending, []
         if pending:
             self._open_sessions(pending)
-        elif self._startup_loader is not None:
-            self.run_worker(self._run_startup(), name='startup', group='startup', exit_on_error=False)
         else:
-            self.new_session()
+            session = self.new_session()
+            if self._startup_loader is not None:
+                self._placeholder_key = session.key
+                self.run_worker(self._run_startup(), name='startup', group='startup', exit_on_error=False)
         active = self.active_session
         if active is not None and active.agent_name:
             header.agent_name = active.agent_name
@@ -189,12 +194,27 @@ class AgentTUI(QuitHandler, App):
             self.notify(str(error), severity='error', timeout=8)
         self.set_sops(sops)
         if sessions:
+            await self._drop_placeholder()
             self.open_sessions(sessions)
             active = self.active_session
             if active is not None and active.agent_name:
                 self.query_one(HeaderBar).agent_name = active.agent_name
-        elif not self._sessions:
-            self.new_session()
+
+    async def _drop_placeholder(self) -> None:
+        """Remove the tab made at mount, so the restored tabs are the only ones.
+
+        A placeholder the user has typed into, or that already holds a message, is
+        kept: throwing away something typed while waiting would be worse than one
+        extra tab.
+        """
+        key = self._placeholder_key
+        self._placeholder_key = None
+        session = self._sessions.get(key) if key is not None else None
+        if session is None:
+            return
+        if session.session_id is not None or session.busy or session.draft or not session.pane.is_empty or self.query_one(ChatInput).text:
+            return
+        await self._drop_session(session)
 
     def set_agent_name(self, name: str) -> None:
         self._agent_name = name

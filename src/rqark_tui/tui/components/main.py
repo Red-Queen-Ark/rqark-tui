@@ -241,6 +241,11 @@ class MessagePane(RichLog):
         # The single transient status block (a running command's progress), if any.
         self._status: _Block | None = None
 
+    @property
+    def is_empty(self) -> bool:
+        """True while the pane holds no message and no transient status."""
+        return not self._blocks and self._status is None
+
     def set_tool_keys(self, tool_keys: dict[str, str]) -> None:
         self._tool_keys = tool_keys
         for block in self._blocks:

@@ -19,7 +19,7 @@ classifiers = [
 dependencies = [
     "textual>=8.2.8",
     "wcwidth>=0.8.3",
-    "rqark-app==0.13.3",
+    "rqark-app==0.13.5",
     "rqark-core==0.5.4",
 ]
 

@@ -7,6 +7,8 @@ from rqark_app.session.storage import CloudStorage, JSONLStorage
 
 from rqark_tui.app import build_app, build_storage, load_workspace
 from rqark_tui.tui import AgentTUI
+from rqark_tui.tui.components.footer import ChatInput
+from rqark_tui.tui.components.main import MessagePane
 
 
 class Probe:
@@ -29,7 +31,7 @@ class SlowStorage(JSONLStorage):
         super().__init__(path)
         self._probe = probe
 
-    async def load(self):
+    async def load(self, ids=None):
         self._probe.enter()
         try:
             await asyncio.sleep(0.02)
@@ -97,7 +99,7 @@ async def test_storage_is_the_cloud_when_one_is_configured(tmp_path: Path):
     await config.aclose()
 
 
-async def test_the_tui_paints_before_the_loader_answers():
+async def test_a_session_is_on_screen_before_the_loader_answers():
     started = asyncio.Event()
     release = asyncio.Event()
 
@@ -109,10 +111,11 @@ async def test_the_tui_paints_before_the_loader_answers():
     tui = AgentTUI()
     tui.load_startup(loader)
     async with tui.run_test(size=(40, 100)) as pilot:
-        await started.wait()
-        assert tui.is_running
-        assert tui.sessions == []
+        await pilot.pause()
+        assert len(tui.sessions) == 1
+        assert tui.query_one(MessagePane).is_empty
 
+        await started.wait()
         release.set()
         await pilot.pause()
         await pilot.pause()
@@ -120,7 +123,7 @@ async def test_the_tui_paints_before_the_loader_answers():
         assert [session.title for session in tui.sessions] == ['Restored']
 
 
-async def test_no_session_is_made_while_the_loader_is_pending():
+async def test_the_placeholder_stays_when_nothing_is_restored():
     release = asyncio.Event()
 
     async def loader():
@@ -131,13 +134,14 @@ async def test_no_session_is_made_while_the_loader_is_pending():
     tui.load_startup(loader)
     async with tui.run_test(size=(40, 100)) as pilot:
         await pilot.pause()
-        assert tui.sessions == []
+        placeholder = tui.active_key
+        assert len(tui.sessions) == 1
 
         release.set()
         await pilot.pause()
         await pilot.pause()
 
-        assert len(tui.sessions) == 1
+        assert [session.key for session in tui.sessions] == [placeholder]
 
 
 async def test_a_failing_loader_still_leaves_a_session_to_type_in():
@@ -188,14 +192,12 @@ async def test_bootstrap_fills_the_interface_in_after_the_first_frame(tmp_path: 
         assert len(tui.sessions) == 1
 
 
-async def test_text_typed_during_the_start_is_kept():
-    from rqark_tui.tui.components.footer import ChatInput
-
+async def test_a_placeholder_with_text_is_not_thrown_away():
     release = asyncio.Event()
 
     async def loader():
         await release.wait()
-        return [], []
+        return [('uuid-1', 'Restored', [], '')], []
 
     tui = AgentTUI()
     tui.load_startup(loader)
@@ -205,9 +207,9 @@ async def test_text_typed_during_the_start_is_kept():
         chat.text = 'hello'
         await pilot.press('enter')
         await pilot.pause()
-        assert chat.text == 'hello'
 
         release.set()
         await pilot.pause()
         await pilot.pause()
-        assert len(tui.sessions) == 1
+
+        assert [session.title for session in tui.sessions] == ['', 'Restored']
