@@ -101,6 +101,10 @@ tools:
 
 `/theme` 會開出選擇面板，與 `/models`、`/agents` 一樣用方向鍵挑選、`Enter` 確認、`Esc` 取消；`/theme <名稱>` 直接切換。環境變數 `RQARK_THEME` 決定啟動時的預設。切換即時生效，重啟後回到環境變數或 `default`。
 
+## 啟動
+
+介面先畫出嚟，之後才讀 cloud：輸入框、header、tab 列即時顯示，agent、model、session、SOP 喺背景陸續填入。啟動期間打字不會遺失，`Enter` 會提示「Still starting」並保留輸入內容。
+
 ## 使用
 
 ```bash
