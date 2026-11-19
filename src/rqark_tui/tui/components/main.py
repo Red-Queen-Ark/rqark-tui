@@ -225,6 +225,7 @@ class MessagePane(RichLog):
         self._mount_start = 0
         self._mounted = False
         self._backfilling = False
+        self._backfill_pending = False
         self._agent_index: dict[str, int] = {}
         self._status_index: int | None = None
         # Selection state in virtual coordinates: (row, col) where row is the
@@ -709,6 +710,26 @@ class MessagePane(RichLog):
         """Load earlier history when the reader reaches the top of the window."""
         super().watch_scroll_y(old_value, new_value)
         if new_value <= 0:
+            self._request_backfill()
+
+    def _request_backfill(self) -> None:
+        """Defer the backfill until the scroll that triggered it has settled.
+
+        A smooth scroll (scrollbar drag, ``scroll_to(animate=True)``) sets
+        ``scroll_y`` on every animation frame. Backfilling inside that watcher
+        would call ``scroll_to`` while the animator is still iterating its own
+        animation, so Textual pops the running animation and then fails to
+        delete it again (``KeyError`` in ``Animator.__call__``). Deferring keeps
+        the scroll mutation out of the animator's callback.
+        """
+        if self._backfill_pending:
+            return
+        self._backfill_pending = True
+        self.call_next(self._run_backfill)
+
+    def _run_backfill(self) -> None:
+        self._backfill_pending = False
+        if self.scroll_offset.y <= 0:
             self._backfill()
 
     @staticmethod
