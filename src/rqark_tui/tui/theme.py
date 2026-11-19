@@ -21,7 +21,7 @@ from importlib.resources import files
 from textual.theme import Theme as TextualTheme
 
 #: Theme used when nothing else asks for one.
-DEFAULT_THEME = 'redqueen'
+DEFAULT_THEME = 'default'
 
 #: Environment variable that overrides :data:`DEFAULT_THEME`.
 THEME_ENV = 'RQARK_THEME'

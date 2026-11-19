@@ -1,3 +1,4 @@
+import asyncio
 import json
 
 import pytest
@@ -20,8 +21,8 @@ def _contrast(first: str, second: str) -> float:
     return (high + 0.05) / (low + 0.05)
 
 
-def test_the_three_dark_themes_ship() -> None:
-    assert theme_names() == ['eva', 'matrix', 'redqueen']
+def test_the_dark_themes_ship() -> None:
+    assert theme_names() == ['default', 'eva', 'matrix', 'redqueen']
 
 
 @pytest.mark.parametrize('name', theme_names())
@@ -83,7 +84,7 @@ def test_a_theme_missing_a_token_is_rejected(tmp_path, monkeypatch) -> None:
 
 def test_resolve_name_prefers_the_argument_then_the_environment(monkeypatch) -> None:
     monkeypatch.delenv('RQARK_THEME', raising=False)
-    assert resolve_name() == DEFAULT_THEME
+    assert resolve_name() == DEFAULT_THEME == 'default'
     assert resolve_name('matrix') == 'matrix'
     monkeypatch.setenv('RQARK_THEME', 'eva')
     assert resolve_name() == 'eva'
@@ -125,3 +126,37 @@ async def test_the_theme_command_rejects_an_unknown_name():
         tui._switch_theme('solarized')
         await pilot.pause()
         assert theme.active_theme().name == 'matrix'
+
+
+async def test_the_theme_command_opens_a_picker_like_models_and_agents():
+    from rqark_tui.tui import AgentTUI
+    from rqark_tui.tui.components.footer import ChatInput
+    from rqark_tui.tui.components.popup import PopupSelector
+
+    tui = AgentTUI(theme='redqueen')
+    async with tui.run_test(size=(40, 100)) as pilot:
+        await pilot.pause()
+        tui._switch_theme('')
+        await pilot.pause()
+        popup = tui.query_one(PopupSelector)
+        assert popup.display is True
+        assert [value for _label, value in popup._entries] == theme.theme_names()
+        assert tui.query_one(ChatInput)._pick_done is not None
+
+
+async def test_picking_a_theme_applies_it():
+    from rqark_tui.tui import AgentTUI
+    from rqark_tui.tui.components.popup import PopupSelector
+
+    tui = AgentTUI(theme='redqueen')
+    async with tui.run_test(size=(40, 100)) as pilot:
+        await pilot.pause()
+        picker = asyncio.ensure_future(tui._pick_theme())
+        await pilot.pause()
+        popup = tui.query_one(PopupSelector)
+        popup.move(theme.theme_names().index('matrix') - popup._selected)
+        await pilot.press('enter')
+        await pilot.pause()
+        await picker
+        assert theme.active_theme().name == 'matrix'
+        assert tui.screen.styles.background.hex.lower() == '#000703'

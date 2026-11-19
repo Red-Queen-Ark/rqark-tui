@@ -4,6 +4,7 @@ from asyncio import AbstractEventLoop
 from collections.abc import Callable, Sequence
 from datetime import datetime
 
+from rich.markup import escape
 from rqark_app.sop.types import Sop
 from rqark_app.types.session import SummaryMessage
 from rqark_core.types.chat import AssistantMessage, Message, SystemMessage, ToolMessage, UserMessage
@@ -599,13 +600,23 @@ class AgentTUI(QuitHandler, App):
     def _switch_theme(self, name: str) -> None:
         names = theme_names()
         if not name:
-            self.notify(f'Theme: {active_theme().name} (choose {", ".join(names)})', timeout=4)
+            self.run_worker(self._pick_theme(), name='theme-picker', group='agent', exit_on_error=False)
             return
         if name not in names:
             self.notify(f'Unknown theme {name}; choose {", ".join(names)}', severity='warning', timeout=4)
             return
         self.apply_theme(name)
         self.notify(f'Theme: {name}', timeout=3)
+
+    async def _pick_theme(self) -> None:
+        """Offer the themes in the popup selector, the way ``/models`` and ``/agents`` do."""
+        names = theme_names()
+        current = active_theme().name
+        entries = [(f'[b]{escape(load_theme(name).label)}[/b] {name}', name) for name in names]
+        index = names.index(current) if current in names else 0
+        entry = await self.pick(entries, title='Theme', index=index)
+        if entry is not None:
+            self.apply_theme(entry[1])
 
     async def _run_chat(self, session: ChatSession, text: str, images: list[str]) -> None:
         handler = session.handler
