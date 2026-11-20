@@ -6,6 +6,8 @@
 
 ## 功能特色
 
+- 由上而下三段式版面：session tab 列、訊息區、輸入框，狀態列（agent、model、版本、cloud 標記）固定在最底
+- 新 session 未有任何訊息時，訊息區中央顯示 Red Queen Ark 字標，送出第一則訊息後自動讓位
 - 串流式聊天：reasoning、Markdown 內容、tool call 與 tool result 即時顯示
 - agent 由 `~/.rqark/agents/*.yml` 定義（人格、prompt、工具），首次執行會用內建三個預設（Angel Holiday、Diana、Wednesday）填入該目錄；可在執行中用 `/agents` 切換
 - 預設 agent 記在 `rqark-data-cloud`（每個用戶每個 source 一個）：有設定 `cloud.yml` 時開場自動讀回並選中它；改預設請用 `rqark-data-cloud-web-ui` 的 Agent Defaults 頁

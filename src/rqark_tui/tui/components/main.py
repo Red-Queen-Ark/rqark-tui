@@ -187,11 +187,23 @@ class MessagePane(RichLog):
     DEFAULT_CSS = """
     MessagePane {
         height: 1fr;
-        border: round;
+        border: none;
         padding: 1 2;
         overflow-x: hidden;
     }
     """
+
+    class EmptinessChanged(Message):
+        """Posted when the pane stops being empty, or becomes empty again."""
+
+        def __init__(self, pane: 'MessagePane', empty: bool) -> None:
+            super().__init__()
+            self.pane = pane
+            self.empty = empty
+
+        @property
+        def control(self) -> 'MessagePane':
+            return self.pane
 
     class RevertRequested(Message):
         """Posted when a message's ``[revert]`` button is clicked."""
@@ -449,6 +461,7 @@ class MessagePane(RichLog):
     # --- block bookkeeping --------------------------------------------------
 
     def _new_block(self, kind: str, at: datetime | None, sections: list[tuple[str, str, str]], agent: str = '', message_id: str = '') -> _Block:
+        was_empty = self.is_empty
         block = _Block(kind, self._format_time(at), agent, message_id=message_id)
         for mode, name, text in sections:
             block.sections.append(_Section(mode, name, text))
@@ -457,6 +470,8 @@ class MessagePane(RichLog):
         self._message_spans.append(None)
         if kind == 'agent':
             self._agent_index[agent] = len(self._blocks) - 1
+        if was_empty:
+            self.post_message(self.EmptinessChanged(self, False))
         return block
 
     def _close_last(self) -> None:
@@ -1029,6 +1044,7 @@ class MessagePane(RichLog):
 
     def clear(self) -> 'MessagePane':
         """Clear the log and any active selection."""
+        was_empty = self.is_empty
         self._dirty_index = None
         self._status = None
         self._status_index = None
@@ -1038,7 +1054,10 @@ class MessagePane(RichLog):
         self._mount_start = 0
         self._mounted = False
         self._clear_selection()
-        return super().clear()
+        cleared = super().clear()
+        if not was_empty:
+            self.post_message(self.EmptinessChanged(self, True))
+        return cleared
 
     # --- selection helpers --------------------------------------------------
 

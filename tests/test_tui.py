@@ -4,15 +4,16 @@ from collections.abc import Sequence
 from rqark_app.types.session import Session, SummaryMessage, message_from_dict
 from rqark_core.types.chat import AssistantMessage, Message, SystemMessage, ToolMessage, UserMessage
 from rqark_core.types.tool import PlanItem
+from textual.color import Color
 from textual.widgets import Static
 
 from rqark_tui.tui import AgentTUI
 from rqark_tui.tui.components.dialog import YesNoDialog
 from rqark_tui.tui.components.footer import ChatInput
-from rqark_tui.tui.components.header import HeaderBar
 from rqark_tui.tui.components.main import MessagePane
 from rqark_tui.tui.components.popup import PopupSelector
-from rqark_tui.tui.components.session import SessionTabs
+from rqark_tui.tui.components.session import SessionTab, SessionTabs
+from rqark_tui.tui.components.status import StatusBar
 from rqark_tui.tui.theme import active_theme, theme_names
 
 PLAN_ITEM = PlanItem(id='1', content='do the thing', status='pending')
@@ -76,11 +77,11 @@ async def test_header_shows_agent_and_model_updates():
     tui = AgentTUI()
     async with tui.run_test(size=(40, 100)) as pilot:
         await pilot.pause()
-        header = tui.query_one(HeaderBar)
+        header = tui.query_one(StatusBar)
         tui.set_agent_name('coder')
         tui.set_model_name('deepseek')
         assert (header.agent_name, header.model_name) == ('coder', 'deepseek')
-        assert 'coder' in str(header.query_one('.header-line', Static).render())
+        assert 'coder' in str(header.query_one('.status-line', Static).render())
 
 
 async def test_header_shows_the_cloud_badge_in_cloud_mode():
@@ -88,18 +89,18 @@ async def test_header_shows_the_cloud_badge_in_cloud_mode():
     tui.set_cloud_mode(True)
     async with tui.run_test(size=(40, 100)) as pilot:
         await pilot.pause()
-        header = tui.query_one(HeaderBar)
+        header = tui.query_one(StatusBar)
         assert header.cloud is True
-        assert header.query_one('.header-cloud', Static).display
+        assert header.query_one('.status-cloud', Static).display
 
 
 async def test_header_hides_the_cloud_badge_outside_cloud_mode():
     tui = AgentTUI()
     async with tui.run_test(size=(40, 100)) as pilot:
         await pilot.pause()
-        header = tui.query_one(HeaderBar)
+        header = tui.query_one(StatusBar)
         assert header.cloud is False
-        assert not header.query_one('.header-cloud', Static).display
+        assert not header.query_one('.status-cloud', Static).display
 
 
 async def test_setters_before_running_store_values_without_querying():
@@ -110,7 +111,7 @@ async def test_setters_before_running_store_values_without_querying():
     assert (tui._agent_name, tui._model_name) == ('coder', 'deepseek')
     async with tui.run_test(size=(40, 100)) as pilot:
         await pilot.pause()
-        header = tui.query_one(HeaderBar)
+        header = tui.query_one(StatusBar)
         assert (header.agent_name, header.model_name) == ('coder', 'deepseek')
         assert tui.active_session.session_id == 'stored-uuid'
 
@@ -491,7 +492,7 @@ async def test_compose_yields_one_widget_of_each_kind_with_focus_on_the_input():
     tui = AgentTUI()
     async with tui.run_test(size=(40, 100)) as pilot:
         await pilot.pause()
-        assert len(tui.query(HeaderBar)) == 1
+        assert len(tui.query(StatusBar)) == 1
         assert len(tui.query(SessionTabs)) == 1
         assert len(tui.query(MessagePane)) == 1
         assert len(tui.query(PopupSelector)) == 1
@@ -499,17 +500,19 @@ async def test_compose_yields_one_widget_of_each_kind_with_focus_on_the_input():
         assert tui.query_one(ChatInput).has_focus
 
 
-async def test_widgets_stack_in_header_tabs_main_popup_footer_order():
+async def test_widgets_stack_in_tabs_main_popup_input_status_order():
     tui = AgentTUI()
     async with tui.run_test(size=(40, 100)) as pilot:
         await pilot.pause()
-        header = tui.query_one(HeaderBar).region
         tabs = tui.query_one(SessionTabs).region
         pane = tui.query_one(MessagePane).region
         chat = tui.query_one(ChatInput).region
-        assert header.y + header.height == tabs.y
+        status = tui.query_one(StatusBar).region
+        assert tabs.y == 0
         assert tabs.y + tabs.height == pane.y
-        assert pane.y + pane.height <= chat.y
+        assert pane.y + pane.height == chat.y
+        assert chat.y + chat.height == status.y
+        assert status.y + status.height == 99
 
 
 async def test_auto_focus_points_at_the_chat_input():
@@ -540,6 +543,28 @@ async def test_apply_theme_repaints_the_screen():
         await pilot.pause()
         assert active_theme().name == 'matrix'
         assert tui.screen.styles.background.hex == '#000703'
+
+
+async def test_apply_theme_repaints_the_status_line():
+    tui = AgentTUI(theme='redqueen')
+    async with tui.run_test(size=(40, 100)) as pilot:
+        await pilot.pause()
+        line = tui.query_one('.status-line', Static)
+        assert active_theme().color('accent').lower() in str(line.content)
+        tui.apply_theme('matrix')
+        await pilot.pause()
+        assert active_theme().color('accent').lower() in str(line.content)
+
+
+async def test_apply_theme_repaints_the_tab_close_marks():
+    tui = AgentTUI(theme='redqueen')
+    async with tui.run_test(size=(40, 100)) as pilot:
+        await pilot.pause()
+        tab = tui.query_one(SessionTab)
+        assert tab.label.spans[-1].style.foreground == Color.parse(active_theme().color('fg_muted'))
+        tui.apply_theme('matrix')
+        await pilot.pause()
+        assert tab.label.spans[-1].style.foreground == Color.parse(active_theme().color('fg_muted'))
 
 
 async def test_submitted_images_reach_the_handler(tmp_path, monkeypatch):

@@ -10,17 +10,20 @@ from rqark_app.types.session import SummaryMessage
 from rqark_core.types.chat import AssistantMessage, Message, SystemMessage, ToolMessage, UserMessage
 from rqark_core.types.tool import BaseTool, PlanItem
 from textual.app import App, AutopilotCallbackType, ComposeResult
+from textual.containers import Vertical
+from textual.css.query import NoMatches
 from textual.driver import Driver
 from textual.screen import ModalScreen
 from textual.worker import Worker
 
 from rqark_tui.tui.components.dialog import YesNoDialog
 from rqark_tui.tui.components.footer import ChatInput
-from rqark_tui.tui.components.header import HeaderBar
 from rqark_tui.tui.components.main import MessagePane
 from rqark_tui.tui.components.popup import Entry, PopupSelector
 from rqark_tui.tui.components.quit_handler import QuitHandler
 from rqark_tui.tui.components.session import SessionTabs
+from rqark_tui.tui.components.splash import Splash
+from rqark_tui.tui.components.status import StatusBar
 from rqark_tui.tui.driver import tolerant_driver_class
 from rqark_tui.tui.session import ChatSession, SessionHandler, session_uuid
 from rqark_tui.tui.theme import active_theme, load_theme, resolve_name, textual_theme, theme_names, use_theme
@@ -123,6 +126,12 @@ class AgentTUI(QuitHandler, App):
             self.refresh_css()
         for session in self._sessions.values():
             session.pane.repaint()
+        for splash in self.query(Splash):
+            splash.repaint()
+        for status in self.query(StatusBar):
+            status.repaint()
+        for tabs in self.query(SessionTabs):
+            tabs.repaint()
         if persist:
             self._save_theme(name)
 
@@ -192,17 +201,18 @@ class AgentTUI(QuitHandler, App):
         self.select_session(restored[0].key)
 
     def compose(self) -> ComposeResult:
-        yield HeaderBar()
         yield SessionTabs()
+        yield Vertical(Splash(id='splash'), id='main-area')
         yield PopupSelector()
         yield ChatInput()
+        yield StatusBar()
 
     def on_mount(self) -> None:
         self.screen.styles.background = active_theme().color('bg')
-        header = self.query_one(HeaderBar)
-        header.agent_name = self._agent_name
-        header.model_name = self._model_name
-        header.cloud = self._cloud
+        status = self.query_one(StatusBar)
+        status.agent_name = self._agent_name
+        status.model_name = self._model_name
+        status.cloud = self._cloud
         pending, self._pending = self._pending, []
         if pending:
             self._open_sessions(pending)
@@ -214,7 +224,8 @@ class AgentTUI(QuitHandler, App):
                 self.run_worker(self._run_startup(), name='startup', group='startup', exit_on_error=False)
         active = self.active_session
         if active is not None and active.agent_name:
-            header.agent_name = active.agent_name
+            status.agent_name = active.agent_name
+        self._sync_splash()
         self.query_one(ChatInput).focus()
 
     async def _run_startup(self) -> None:
@@ -235,7 +246,8 @@ class AgentTUI(QuitHandler, App):
             self.open_sessions(sessions)
             active = self.active_session
             if active is not None and active.agent_name:
-                self.query_one(HeaderBar).agent_name = active.agent_name
+                self.query_one(StatusBar).agent_name = active.agent_name
+            self._sync_splash()
 
     async def _drop_placeholder(self) -> None:
         """Remove the tab made at mount, so the restored tabs are the only ones.
@@ -256,17 +268,17 @@ class AgentTUI(QuitHandler, App):
     def set_agent_name(self, name: str) -> None:
         self._agent_name = name
         if self.is_running:
-            self.query_one(HeaderBar).agent_name = name
+            self.query_one(StatusBar).agent_name = name
 
     def set_model_name(self, name: str) -> None:
         self._model_name = name
         if self.is_running:
-            self.query_one(HeaderBar).model_name = name
+            self.query_one(StatusBar).model_name = name
 
     def set_cloud_mode(self, cloud: bool) -> None:
         self._cloud = cloud
         if self.is_running:
-            self.query_one(HeaderBar).cloud = cloud
+            self.query_one(StatusBar).cloud = cloud
 
     # --- sessions -----------------------------------------------------------
 
@@ -274,6 +286,25 @@ class AgentTUI(QuitHandler, App):
     def active_session(self) -> ChatSession | None:
         """The session whose transcript the pane is showing."""
         return self._sessions.get(self._active_key) if self._active_key is not None else None
+
+    def _sync_splash(self) -> None:
+        """Show the wordmark instead of an empty transcript.
+
+        The splash fills the area above the input until the session on screen has
+        its first message, so a new session opens on the product name rather than
+        on blank space.
+        """
+        try:
+            splash = self.query_one(Splash)
+        except NoMatches:
+            return
+        pane = self.pane
+        splash.set_class(pane is None or pane.is_empty, 'visible')
+
+    def on_message_pane_emptiness_changed(self, event: MessagePane.EmptinessChanged) -> None:
+        """A pane gained or lost its first block: the splash follows the active one."""
+        if event.pane is self.pane:
+            self._sync_splash()
 
     @property
     def sessions(self) -> list[ChatSession]:
@@ -336,7 +367,7 @@ class AgentTUI(QuitHandler, App):
             session.handler = self._session_factory(key, session_id)
         if session_id is not None:
             self._keys_by_uuid[session_id] = key
-        self.mount(pane, before=self.query_one(PopupSelector))
+        self.query_one('#main-area').mount(pane)
         self.query_one(SessionTabs).add_session(key, session.label)
         if messages:
             self._replay(session, messages)
@@ -366,6 +397,7 @@ class AgentTUI(QuitHandler, App):
             if session.agent_name:
                 self.set_agent_name(session.agent_name)
             chat.text = session.draft
+        self._sync_splash()
         chat.focus()
 
     def close_session(self, key: str) -> None:
@@ -542,6 +574,7 @@ class AgentTUI(QuitHandler, App):
         self.query_one(SessionTabs).set_label(key, session.label)
         if key == self._active_key:
             self._show_plan(session)
+        self._sync_splash()
 
     def on_session_tabs_selected(self, event: SessionTabs.Selected) -> None:
         self.select_session(event.key)
