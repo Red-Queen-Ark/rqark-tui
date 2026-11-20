@@ -92,6 +92,7 @@ class Splash(Static):
     Splash {
         height: 1fr;
         display: none;
+        padding: 0 3;
         content-align: center middle;
         text-align: center;
     }

@@ -34,6 +34,7 @@ SessionTabs {
 }
 
 #main-area {
+    width: 100%;
     height: 1fr;
     layers: content overlay;
 }
@@ -41,6 +42,7 @@ SessionTabs {
 Splash {
     height: 1fr;
     layer: overlay;
+    padding: 0 3;
     color: $rq-fg-muted;
 }
 
@@ -48,7 +50,7 @@ MessagePane {
     height: 1fr;
     layer: content;
     border: none;
-    padding: 1 2;
+    padding: 1 3;
     overflow-x: hidden;
     background: transparent;
 }
@@ -62,7 +64,8 @@ PopupSelector {
     display: none;
     border: round $rq-border;
     background: $rq-surface;
-    padding: 0 2;
+    margin: 0 1;
+    padding: 0 1;
     height: auto;
     max-height: 10;
     color: $rq-fg;
@@ -71,8 +74,8 @@ PopupSelector {
 ChatInput {
     border: round $rq-border;
     border-title-color: $rq-fg-muted;
-    margin: 0 0;
-    padding: 0 2;
+    margin: 0 1;
+    padding: 0 1;
     background: transparent;
     color: $rq-fg;
 }
@@ -83,7 +86,7 @@ ChatInput:focus {
 
 StatusBar {
     height: 1;
-    padding: 0 2;
+    padding: 0 3;
     background: transparent;
     color: $rq-fg-muted;
 }

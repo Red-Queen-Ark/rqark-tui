@@ -509,7 +509,7 @@ async def test_widgets_stack_in_tabs_main_popup_input_status_order():
         status = tui.query_one(StatusBar).region
         assert tabs.y == 0
         assert tabs.y + tabs.height == pane.y
-        assert pane.y + pane.height <= chat.y
+        assert pane.y + pane.height == chat.y
         assert chat.y + chat.height == status.y
         assert status.y + status.height == 100
 

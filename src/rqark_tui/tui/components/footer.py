@@ -86,8 +86,8 @@ class ChatInput(TextArea):
     DEFAULT_CSS = """
     ChatInput {
         border: round;
-        margin: 0 0;
-        padding: 0 2;
+        margin: 0 1;
+        padding: 0 1;
         background: transparent;
     }
     """

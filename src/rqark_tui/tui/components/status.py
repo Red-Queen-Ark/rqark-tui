@@ -37,7 +37,7 @@ class StatusBar(Horizontal):
     DEFAULT_CSS = """
     StatusBar {
         height: 1;
-        padding: 0 2;
+        padding: 0 3;
         background: transparent;
     }
     StatusBar > .status-line {
