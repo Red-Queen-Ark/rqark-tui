@@ -66,6 +66,11 @@ class Splash(Static):
     def on_resize(self) -> None:
         self.refresh_wordmark()
 
+    def repaint(self) -> None:
+        """Re-render the wordmark after the theme changed."""
+        if self.is_mounted:
+            self.refresh_wordmark()
+
     def refresh_wordmark(self) -> None:
         """Paint the art when it fits, plain text when the window is too narrow."""
         theme = active_theme()

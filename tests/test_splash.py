@@ -71,3 +71,23 @@ async def test_clearing_a_session_brings_the_splash_back():
         tui.clear_messages()
         await pilot.pause()
         assert visible(tui)
+
+
+async def test_the_wordmark_follows_a_theme_change():
+    from rqark_tui.tui.theme import active_theme, load_theme, use_theme
+
+    original = active_theme()
+    tui = AgentTUI(theme='default')
+    try:
+        async with tui.run_test(size=(90, 24)) as pilot:
+            await pilot.pause()
+            before = {str(segment.style) for strip in tui.screen._compositor.render_strips() for segment in strip._segments if '█' in segment.text}
+            assert load_theme('default').color('accent') in ' '.join(before)
+
+            tui.apply_theme('eva')
+            await pilot.pause()
+            after = {str(segment.style) for strip in tui.screen._compositor.render_strips() for segment in strip._segments if '█' in segment.text}
+            assert load_theme('eva').color('accent') in ' '.join(after)
+            assert before != after
+    finally:
+        use_theme(original)
