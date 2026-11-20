@@ -56,8 +56,8 @@ class SessionTabs(Tabs):
 
     DEFAULT_CSS = """
     SessionTabs {
-        height: 4;
-        border: round;
+        height: 3;
+        border: none;
         padding: 0 2;
         background: transparent;
     }

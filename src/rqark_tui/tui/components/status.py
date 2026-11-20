@@ -1,8 +1,10 @@
 from functools import cache
 from importlib.metadata import PackageNotFoundError, version
 
+from rich.markup import escape
 from textual.app import ComposeResult
 from textual.containers import Horizontal
+from textual.css.query import NoMatches
 from textual.reactive import reactive
 from textual.widgets import Static
 
@@ -22,8 +24,8 @@ def _package_version(distribution: str) -> str:
         return 'N/A'
 
 
-class HeaderBar(Horizontal):
-    """Header: 'RQArk TUI vX | Core: <ver> App: <ver> | Agent: <name> | Model: <name>'.
+class StatusBar(Horizontal):
+    """The line under the input: 'RQArk TUI vX | Core: <ver> App: <ver> | Agent: <name> | Model: <name>'.
 
     The line sits on the left; in cloud mode a 'Cloud' badge is shown on the far right.
     """
@@ -33,29 +35,28 @@ class HeaderBar(Horizontal):
     cloud = reactive(False)
 
     DEFAULT_CSS = """
-    HeaderBar {
-        border: round;
-        height: 3;
+    StatusBar {
+        height: 1;
         padding: 0 2;
         background: transparent;
     }
-    HeaderBar > .header-line {
+    StatusBar > .status-line {
         width: 1fr;
         height: 1;
     }
-    HeaderBar > .header-cloud {
+    StatusBar > .status-cloud {
         width: auto;
         height: 1;
         display: none;
     }
-    HeaderBar.cloud > .header-cloud {
+    StatusBar.cloud > .status-cloud {
         display: block;
     }
     """
 
     def compose(self) -> ComposeResult:
-        yield Static('', classes='header-line')
-        yield Static(f'[b {_colour("accent")}]Cloud[/]', classes='header-cloud')
+        yield Static('', classes='status-line')
+        yield Static(f'[b {_colour("accent")}]Cloud[/]', classes='status-cloud')
 
     def on_mount(self) -> None:
         self._update_line()
@@ -70,17 +71,18 @@ class HeaderBar(Horizontal):
         self.set_class(cloud, 'cloud')
 
     def _update_line(self) -> None:
-        if self.is_mounted:
-            self.query_one('.header-line', Static).update(self._line())
+        try:
+            self.query_one('.status-line', Static).update(self._line())
+        except NoMatches:
+            # Before the children are composed there is nothing to write to.
+            pass
 
     def _line(self) -> str:
+        """Agent and model first, versions last: a narrow window loses the versions."""
         accent = _colour('accent')
         agent = _colour('agent')
-        title = f'[{_colour("user")}]RQArk TUI[/]'
         muted = _colour('fg_muted')
-        version_part = f'[{muted}]v{_package_version("rqark-tui")}[/]'
-        core = f'[{muted}]Core:[/] [{muted}]{_package_version("rqark-core")}[/]'
-        app = f'[{muted}]App:[/] [{muted}]{_package_version("rqark-app")}[/]'
-        agent_part = f'[{muted}]Agent:[/] [{agent}]{self.agent_name or "-"}[/]'
-        model = f'[{muted}]Model:[/] [{accent}]{self.model_name or "-"}[/]'
-        return f'[b]{title} {version_part} | {core} {app} | {agent_part} | {model}[/b]'
+        agent_part = f'[{muted}]Agent:[/] [{agent}]{escape(self.agent_name or "-")}[/]'
+        model = f'[{muted}]Model:[/] [{accent}]{escape(self.model_name or "-")}[/]'
+        versions = f'[{muted}]v{_package_version("rqark-tui")} · core {_package_version("rqark-core")} · app {_package_version("rqark-app")}[/]'
+        return f'[b]{agent_part} | {model}  {versions}[/b]'

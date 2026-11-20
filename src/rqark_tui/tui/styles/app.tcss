@@ -3,34 +3,9 @@ Screen {
     color: $rq-fg;
 }
 
-HeaderBar {
-    border: round $rq-border;
-    height: 3;
-    padding: 0 2;
-    background: transparent;
-    color: $rq-fg-muted;
-}
-
-HeaderBar > .header-line {
-    width: 1fr;
-    height: 1;
-    color: $rq-fg-muted;
-}
-
-HeaderBar > .header-cloud {
-    width: auto;
-    height: 1;
-    display: none;
-    color: $rq-accent;
-}
-
-HeaderBar.cloud > .header-cloud {
-    display: block;
-}
-
 SessionTabs {
-    height: 4;
-    border: round $rq-border;
+    height: 3;
+    border: none;
     padding: 0 2;
     background: transparent;
 
@@ -58,17 +33,29 @@ SessionTabs {
     }
 }
 
+#main-area {
+    height: 1fr;
+    layers: content overlay;
+}
+
+Splash {
+    height: 1fr;
+    layer: overlay;
+    color: $rq-fg-muted;
+}
+
 MessagePane {
     height: 1fr;
-    border: round $rq-border;
+    layer: content;
+    border: none;
     padding: 1 2;
     overflow-x: hidden;
-    background: $rq-bg;
+    background: transparent;
 }
 
 MessagePane:focus {
     background-tint: transparent;
-    border: round $rq-border;
+    border: none;
 }
 
 PopupSelector {
@@ -83,6 +70,7 @@ PopupSelector {
 
 ChatInput {
     border: round $rq-border;
+    border-title-color: $rq-fg-muted;
     margin: 0 0;
     padding: 0 2;
     background: transparent;
@@ -91,6 +79,30 @@ ChatInput {
 
 ChatInput:focus {
     border: round $rq-accent;
+}
+
+StatusBar {
+    height: 1;
+    padding: 0 2;
+    background: transparent;
+    color: $rq-fg-muted;
+}
+
+StatusBar > .status-line {
+    width: 1fr;
+    height: 1;
+    color: $rq-fg-muted;
+}
+
+StatusBar > .status-cloud {
+    width: auto;
+    height: 1;
+    display: none;
+    color: $rq-accent;
+}
+
+StatusBar.cloud > .status-cloud {
+    display: block;
 }
 
 YesNoDialog {

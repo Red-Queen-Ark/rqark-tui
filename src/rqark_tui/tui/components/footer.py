@@ -115,7 +115,7 @@ class ChatInput(TextArea):
 
         The box model is border-box, so the total height also includes the
         2 border rows. Vertical padding is 0 (kept in sync with the CSS), so
-        the single-line input is as slim as the HeaderBar (height 3).
+        the single-line input is as slim as the status bar below it.
         """
         lines = min(max(self.document.line_count, 1), self.MAX_LINES)
         self.styles.height = lines + 2
