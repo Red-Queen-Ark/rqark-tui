@@ -71,6 +71,15 @@ class StatusBar(Horizontal):
     def watch_cloud(self, cloud: bool) -> None:
         self.set_class(cloud, 'cloud')
 
+    def repaint(self) -> None:
+        """Repaint the line and the badge after the theme changed."""
+        try:
+            badge = self.query_one('.status-cloud', Static)
+        except NoMatches:
+            return
+        badge.update(f'[b {_colour("accent")}]Cloud[/]')
+        self._update_line()
+
     def _update_line(self) -> None:
         try:
             self.query_one('.status-line', Static).update(self._line())

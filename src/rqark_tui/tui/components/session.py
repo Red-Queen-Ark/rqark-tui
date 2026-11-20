@@ -24,11 +24,17 @@ class SessionTab(Tab):
 
     def __init__(self, title: str, *, id: str | None = None, classes: str = '') -> None:
         super().__init__(self._labelled(title), id=id, classes=classes)
+        self._title = title
         self._close_clicked = False
 
     def set_title(self, title: str) -> None:
         """Rename the tab, keeping the close mark."""
+        self._title = title
         self.label = self._labelled(title)
+
+    def repaint(self) -> None:
+        """Repaint the close mark after the theme changed."""
+        self.label = self._labelled(self._title)
 
     @staticmethod
     def _labelled(title: str) -> Text:
@@ -138,6 +144,11 @@ class SessionTabs(Tabs):
         tab = self._tab(key)
         if tab is not None:
             tab.set_class(busy, '-busy')
+
+    def repaint(self) -> None:
+        """Repaint every tab after the theme changed."""
+        for tab in self.query(SessionTab):
+            tab.repaint()
 
     def key_for(self, tab: Tab | None) -> str | None:
         """The session key behind ``tab``, or None for the ``+`` tab."""

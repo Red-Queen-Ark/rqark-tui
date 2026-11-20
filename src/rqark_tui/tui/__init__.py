@@ -128,6 +128,10 @@ class AgentTUI(QuitHandler, App):
             session.pane.repaint()
         for splash in self.query(Splash):
             splash.repaint()
+        for status in self.query(StatusBar):
+            status.repaint()
+        for tabs in self.query(SessionTabs):
+            tabs.repaint()
         if persist:
             self._save_theme(name)
 

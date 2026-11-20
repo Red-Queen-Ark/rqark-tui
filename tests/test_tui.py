@@ -4,6 +4,7 @@ from collections.abc import Sequence
 from rqark_app.types.session import Session, SummaryMessage, message_from_dict
 from rqark_core.types.chat import AssistantMessage, Message, SystemMessage, ToolMessage, UserMessage
 from rqark_core.types.tool import PlanItem
+from textual.color import Color
 from textual.widgets import Static
 
 from rqark_tui.tui import AgentTUI
@@ -11,7 +12,7 @@ from rqark_tui.tui.components.dialog import YesNoDialog
 from rqark_tui.tui.components.footer import ChatInput
 from rqark_tui.tui.components.main import MessagePane
 from rqark_tui.tui.components.popup import PopupSelector
-from rqark_tui.tui.components.session import SessionTabs
+from rqark_tui.tui.components.session import SessionTab, SessionTabs
 from rqark_tui.tui.components.status import StatusBar
 from rqark_tui.tui.theme import active_theme, theme_names
 
@@ -542,6 +543,28 @@ async def test_apply_theme_repaints_the_screen():
         await pilot.pause()
         assert active_theme().name == 'matrix'
         assert tui.screen.styles.background.hex == '#000703'
+
+
+async def test_apply_theme_repaints_the_status_line():
+    tui = AgentTUI(theme='redqueen')
+    async with tui.run_test(size=(40, 100)) as pilot:
+        await pilot.pause()
+        line = tui.query_one('.status-line', Static)
+        assert active_theme().color('accent').lower() in str(line.content)
+        tui.apply_theme('matrix')
+        await pilot.pause()
+        assert active_theme().color('accent').lower() in str(line.content)
+
+
+async def test_apply_theme_repaints_the_tab_close_marks():
+    tui = AgentTUI(theme='redqueen')
+    async with tui.run_test(size=(40, 100)) as pilot:
+        await pilot.pause()
+        tab = tui.query_one(SessionTab)
+        assert tab.label.spans[-1].style.foreground == Color.parse(active_theme().color('fg_muted'))
+        tui.apply_theme('matrix')
+        await pilot.pause()
+        assert tab.label.spans[-1].style.foreground == Color.parse(active_theme().color('fg_muted'))
 
 
 async def test_submitted_images_reach_the_handler(tmp_path, monkeypatch):
