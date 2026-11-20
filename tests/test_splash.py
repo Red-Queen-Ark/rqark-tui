@@ -2,7 +2,9 @@ from rqark_core.types.chat import UserMessage
 
 from rqark_tui.tui import AgentTUI
 from rqark_tui.tui.components.main import MessagePane
-from rqark_tui.tui.components.splash import GLYPH_ROWS, GLYPH_WIDTH, Splash, glyphs_cover, wordmark_lines, wordmark_width
+from rqark_tui.tui.components.splash import GLYPH_COLUMNS, GLYPH_ROWS, Splash, glyphs_cover, wordmark_lines, wordmark_width
+
+BLOCKS = {'█', '▀', '▄', ' '}
 
 
 def visible(tui: AgentTUI) -> bool:
@@ -10,13 +12,13 @@ def visible(tui: AgentTUI) -> bool:
 
 
 def test_the_wordmark_spells_the_product_name() -> None:
-    assert len(wordmark_lines()) == GLYPH_ROWS
+    assert len(wordmark_lines()) == GLYPH_ROWS // 2
     assert wordmark_width() >= 40
     assert all(len(line) <= wordmark_width() for line in wordmark_lines())
 
 
 def test_the_wordmark_is_block_art() -> None:
-    assert set(''.join(wordmark_lines())) <= {'█', ' '}
+    assert set(''.join(wordmark_lines())) <= BLOCKS
 
 
 def test_every_glyph_matches_the_grid() -> None:
@@ -24,8 +26,8 @@ def test_every_glyph_matches_the_grid() -> None:
 
     for letter, glyph in _GLYPHS.items():
         assert len(glyph) == GLYPH_ROWS, letter
-        assert all(len(line) == GLYPH_WIDTH for line in glyph), letter
-        assert set(''.join(glyph)) <= {'█', ' '}, letter
+        assert all(len(row) == GLYPH_COLUMNS for row in glyph), letter
+        assert set(''.join(glyph)) <= {'#', '.'}, letter
 
 
 def test_every_letter_of_the_wordmark_has_a_glyph() -> None:
@@ -34,8 +36,8 @@ def test_every_letter_of_the_wordmark_has_a_glyph() -> None:
 
 def test_a_wordmark_without_glyphs_falls_back_to_blank_art() -> None:
     assert not glyphs_cover('RED QUEEN ARK ✨')
-    assert len(wordmark_lines('ABZ')) == GLYPH_ROWS
-    assert set(''.join(wordmark_lines('ABZ'))) <= {'█', ' '}
+    assert len(wordmark_lines('ABZ')) == GLYPH_ROWS // 2
+    assert set(''.join(wordmark_lines('ABZ'))) <= BLOCKS
 
 
 async def test_a_new_session_opens_on_the_splash():

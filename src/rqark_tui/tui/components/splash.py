@@ -10,20 +10,24 @@ from textual.widgets import Static
 
 from rqark_tui.tui.theme import active_theme
 
-GLYPH_ROWS = 5
-GLYPH_WIDTH = 4
+GLYPH_ROWS = 10
+GLYPH_COLUMNS = 5
+
+LETTER_GAP = 1
+WORD_GAP = 3
 
 _GLYPHS: dict[str, tuple[str, ...]] = {
-    'A': (' ██ ', '█  █', '████', '█  █', '█  █'),
-    'D': ('███ ', '█  █', '█  █', '█  █', '███ '),
-    'E': ('████', '█   ', '███ ', '█   ', '████'),
-    'K': ('█  █', '█ █ ', '██  ', '█ █ ', '█  █'),
-    'N': ('█  █', '██ █', '█ ██', '█  █', '█  █'),
-    'Q': (' ██ ', '█  █', '█  █', '█ ██', ' ██ '),
-    'R': ('███ ', '█  █', '███ ', '█ █ ', '█  █'),
-    'U': ('█  █', '█  █', '█  █', '█  █', ' ██ '),
-    ' ': ('    ', '    ', '    ', '    ', '    '),
+    'A': ('.###.', '#...#', '#...#', '#...#', '#####', '#...#', '#...#', '#...#', '#...#', '#...#'),
+    'D': ('####.', '#...#', '#...#', '#...#', '#...#', '#...#', '#...#', '#...#', '#...#', '####.'),
+    'E': ('#####', '#....', '#....', '#....', '####.', '#....', '#....', '#....', '#....', '#####'),
+    'K': ('#...#', '#...#', '#..#.', '#.#..', '##...', '##...', '#.#..', '#..#.', '#...#', '#...#'),
+    'N': ('#...#', '#...#', '##..#', '##..#', '#.#.#', '#.#.#', '#..##', '#..##', '#...#', '#...#'),
+    'Q': ('.###.', '#...#', '#...#', '#...#', '#...#', '#...#', '#.#.#', '#..#.', '.###.', '...##'),
+    'R': ('####.', '#...#', '#...#', '#...#', '####.', '#.#..', '#..#.', '#...#', '#...#', '#...#'),
+    'U': ('#...#', '#...#', '#...#', '#...#', '#...#', '#...#', '#...#', '#...#', '#...#', '.###.'),
 }
+
+_HALF_BLOCKS = {('1', '1'): '█', ('1', '0'): '▀', ('0', '1'): '▄', ('0', '0'): ' '}
 
 #: What the splash spells out.
 WORDMARK = 'RED QUEEN ARK'
@@ -32,20 +36,48 @@ WORDMARK = 'RED QUEEN ARK'
 HINT = 'Type a message to begin'
 
 
+def _glyph(letter: str) -> tuple[str, ...]:
+    """One letter as terminal rows, blanks for a letter the grid does not cover."""
+    rows = GLYPH_ROWS // 2
+    bitmap = _GLYPHS.get(letter)
+    if bitmap is None:
+        return (GLYPH_COLUMNS * ' ',) * rows
+    return tuple(
+        ''.join(
+            _HALF_BLOCKS[('1' if top == '#' else '0', '1' if bottom == '#' else '0')]
+            for top, bottom in zip(bitmap[row], bitmap[row + 1])
+        )
+        for row in range(0, GLYPH_ROWS, 2)
+    )
+
+
+def _placed(wordmark: str) -> list[tuple[tuple[str, ...], int]]:
+    """Each glyph with the blank columns that come before it."""
+    placed: list[tuple[tuple[str, ...], int]] = []
+    gap = 0
+    for letter in wordmark.strip():
+        if letter == ' ':
+            gap = WORD_GAP
+            continue
+        placed.append((_glyph(letter), gap))
+        gap = LETTER_GAP
+    return placed
+
+
 def glyphs_cover(wordmark: str = WORDMARK) -> bool:
     """Whether every letter of the wordmark has a block glyph."""
-    return all(letter in _GLYPHS for letter in wordmark)
+    return all(letter in _GLYPHS for letter in wordmark if letter != ' ')
 
 
 def wordmark_lines(wordmark: str = WORDMARK) -> list[str]:
-    """The wordmark as block art, one string per row."""
-    rows: list[list[str]] = [[] for _ in range(GLYPH_ROWS)]
-    missing = (GLYPH_WIDTH * ' ',) * GLYPH_ROWS
-    for letter in wordmark:
-        glyph = _GLYPHS.get(letter, missing)
-        for index, line in enumerate(glyph):
-            rows[index].append(line)
-    return [' '.join(parts).rstrip() for parts in rows]
+    """The wordmark as block art, one string per row, all the same width."""
+    placed = _placed(wordmark)
+    rows = [
+        ''.join(' ' * gap + glyph[row] for glyph, gap in placed).rstrip()
+        for row in range(GLYPH_ROWS // 2)
+    ]
+    width = max(len(row) for row in rows)
+    return [row.ljust(width) for row in rows]
 
 
 def wordmark_width(wordmark: str = WORDMARK) -> int:
