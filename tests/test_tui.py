@@ -511,7 +511,7 @@ async def test_widgets_stack_in_tabs_main_popup_input_status_order():
         assert tabs.y + tabs.height == pane.y
         assert pane.y + pane.height == chat.y
         assert chat.y + chat.height == status.y
-        assert status.y + status.height == 100
+        assert status.y + status.height == 99
 
 
 async def test_auto_focus_points_at_the_chat_input():
