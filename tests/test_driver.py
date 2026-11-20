@@ -1,30 +1,46 @@
 import os
+import subprocess
+import sys
 import threading
 
+from textual.driver import Driver
 from textual.drivers.headless_driver import HeadlessDriver
-from textual.drivers.linux_driver import LinuxDriver
 from textual.message import Message
 
-from rqark_tui.tui.driver import TolerantLinuxDriver, tolerant_driver_class
-
-
-class Harness(TolerantLinuxDriver):
-    def __init__(self, fileno: int) -> None:
-        self.fileno = fileno
-        self._debug = False
-        self.exit_event = threading.Event()
-        self.seen: list[Message] = []
-
-    def process_message(self, message: Message) -> None:
-        self.seen.append(message)
+from rqark_tui.tui.driver import LINUX_DRIVER_MODULE, tolerant_driver_class, tolerant_linux_driver
 
 
 def test_linux_driver_is_swapped() -> None:
-    assert tolerant_driver_class(LinuxDriver) is TolerantLinuxDriver
+    class FakeLinuxDriver(Driver):
+        pass
+
+    FakeLinuxDriver.__module__ = LINUX_DRIVER_MODULE
+    FakeLinuxDriver.__qualname__ = 'LinuxDriver'
+    FakeLinuxDriver.__name__ = 'LinuxDriver'
+
+    assert tolerant_driver_class(FakeLinuxDriver) is tolerant_linux_driver()
     assert tolerant_driver_class(HeadlessDriver) is HeadlessDriver
 
 
+def test_the_linux_driver_module_is_not_imported_from_the_package() -> None:
+    probe = 'import sys, rqark_tui.tui.driver; print("termios" in sys.modules)'
+    out = subprocess.run([sys.executable, '-c', probe], capture_output=True, text=True, check=True)
+    assert out.stdout.strip() == 'False'
+
+
 def test_invalid_utf8_does_not_kill_the_input_thread() -> None:
+    driver_class = tolerant_linux_driver()
+
+    class Harness(driver_class):
+        def __init__(self, fileno: int) -> None:
+            self.fileno = fileno
+            self._debug = False
+            self.exit_event = threading.Event()
+            self.seen: list[Message] = []
+
+        def process_message(self, message: Message) -> None:
+            self.seen.append(message)
+
     read_fd, write_fd = os.pipe()
     driver = Harness(read_fd)
     thread = threading.Thread(target=driver.run_input_thread)
