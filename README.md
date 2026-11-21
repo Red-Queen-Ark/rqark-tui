@@ -99,7 +99,7 @@ tools:
 
 配色集中於 `src/rqark_tui/tui/themes/` 下的 JSON 檔，一個檔案一個主題。每個檔案定義同一組語義 token（`bg`、`surface`、`fg`、`accent`、`user`、`agent`、`tool`、`error`、`selection`、`diff_add`、`code_keyword` 等），介面樣式與 Python 渲染器只讀 token 名稱，不寫死色值。新增主題即放入一個 JSON 檔，程式碼無需改動。
 
-內建 `default`（原本的配色，預設）、`redqueen`、`eva`、`matrix`。後三者色值取自 `rqark-agent-cloud-web-ui` 的 Dark Theme。
+內建 `default`（原本的配色，預設）、`redqueen`、`eva`、`matrix`。後三者色值取自 `rqark-cloud-web-ui` 的 Dark Theme。
 
 `/theme` 會開出選擇面板，與 `/models`、`/agents` 一樣用方向鍵挑選、`Enter` 確認、`Esc` 取消；`/theme <名稱>` 直接切換。切換即時生效，並寫入 data cloud 嘅使用者設定（key `tui.theme`），下次啟動自動套回。環境變數 `RQARK_THEME` 仍然可以覆寫啟動時嘅選擇；未連 cloud 或未存過設定時用 `default`。
 
