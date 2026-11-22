@@ -32,7 +32,7 @@ Name branches `type/short-topic`, using the same types as commits: `feat/issue-t
 
 Title: same format as a commit subject.
 
-Body: three sections, always in this order, at most three bullets each.
+Body: four sections, always in this order, at most three bullets each.
 
 ```markdown
 ## What
@@ -41,9 +41,24 @@ Body: three sections, always in this order, at most three bullets each.
 ## Why
 - Why it was needed.
 
+## Blast Radius
+- What else this touches, and the one fact that makes it safe.
+
 ## Verify
-- How it was checked.
+- How it was checked. Paste the command and its output, or name the test that covers it.
 ```
+
+`Blast Radius` is the cost of guessing wrong: which callers, stored data, API
+contracts or other repositories the change can reach. A list of grep hits is not
+enough. Name the fact that makes the change safe and how it was proven by running
+code.
+
+`Verify` states what was observed, not what was intended. "Tests pass" is only
+acceptable when the test that covers this behaviour is named. When the change is
+behaviour no test reaches, paste the command output or the screenshot.
+
+A green pipeline is necessary and not sufficient. It does not authorize a merge on
+its own.
 
 Merging:
 
@@ -106,6 +121,7 @@ Tags are created only on `main`, only after the version commit is merged, and ne
 
 ## Before opening a pull request
 
+- Run the `Test` workflow's commands locally first; CI runs the same ones.
 - Format, lint and test the code with the commands listed in `AGENTS.md`.
 - Check the commit subject against the rules above.
 - Check the pull request body against the three-section template.
