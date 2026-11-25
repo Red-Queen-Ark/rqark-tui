@@ -69,10 +69,15 @@ split-on-trailing-comma = false
 exclude = ["tests/"]
 
 [tool.ty.environment]
+python-version = "3.14"
 python-platform = "all"
 
 [tool.pyright]
+pythonVersion = "3.14"
 exclude = ["tests"]
+
+[tool.mypy]
+python_version = "3.14"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
