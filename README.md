@@ -1,61 +1,61 @@
 # rqark-tui
 
-基於 [Textual](https://textual.textualize.io/) 的終端聊天客戶端，用於與 LLM 驅動的 coding agent 對話。
+A [Textual](https://textual.textualize.io/) terminal chat client for talking to LLM-driven coding agents.
 
-`rqark-tui` 只是介面層，實際的聊天引擎（provider 管理、session 儲存、串流、重試）由 [`rqark-app`](https://pypi.org/project/rqark-app/) 提供。
+`rqark-tui` is the interface layer only. The chat engine behind it — provider management, session storage, streaming and retries — comes from [`rqark-app`](https://pypi.org/project/rqark-app/).
 
-## 功能特色
+## Features
 
-- 由上而下三段式版面：session tab 列、訊息區、輸入框，狀態列（agent、model、版本、cloud 標記）固定在最底
-- 新 session 未有任何訊息時，訊息區中央顯示 Red Queen Ark 字標，送出第一則訊息後自動讓位
-- 串流式聊天：reasoning、Markdown 內容、tool call 與 tool result 即時顯示
-- agent 由 `~/.rqark/agents/*.yml` 定義（人格、prompt、工具），首次執行會用內建三個預設（Angel Holiday、Diana、Wednesday）填入該目錄；可在執行中用 `/agents` 切換
-- 預設 agent 記在 `rqark-data-cloud`（每個用戶每個 source 一個）：有設定 `cloud.yml` 時開場自動讀回並選中它；改預設請用 `rqark-data-cloud-web-ui` 的 Agent Defaults 頁
-- 每個專案目錄獨立 session：`~/.rqark/dir_caches.json` 記錄專案目錄 → session 對應，在同一專案重開即恢復上次對話
-- 多 provider 設定（依 `priority` 排序），API 連續失敗 3 次自動 failover；`app.chat` 無限重試為設計行為，context 超長時自動摘要壓縮後續跑
-- Thinking 區塊與 tool result 預設收合，可按 `▶` / `▼` 展開
-- `/stop` 中斷時保留已收到的部分內容
-- 滑鼠拖曳選取跨行文字；`Ctrl+C` 複製選取、`Ctrl+A` 全選、每則訊息右上 `[copy]` 按鈕整則複製（同時寫入 app 內部與系統剪貼簿）
-- 多個 session 同時運行：每條 session 有自己的訊息窗、worker 同 transcript，切 tab 即可望返另一條嘅即時進度，互不阻塞
-- Agent plan 以浮動 popup 顯示進度（` ` 待辦 / `>` 進行中 / `x` 完成 / `-` 取消），只顯示目前 session 嘅 plan
-- Subagent 輸出留在所屬 session 內，以 `Agent - <id>` 分塊顯示
-- 新 session 首則訊息送出後背景自動產生標題（標題會顯示在 tab 上）
+- Three-part top-to-bottom layout: session tab bar, message area, input box, with a status bar (agent, model, version, cloud marker) pinned to the bottom
+- An empty session shows the Red Queen Ark wordmark in the middle of the message area; it steps aside once the first message is sent
+- Streaming chat: reasoning, Markdown content, tool calls and tool results appear as they arrive
+- Agents are defined in `~/.rqark/agents/*.yml` (persona, prompt, tools). On first run the directory is seeded with three built-in defaults (Angel Holiday, Diana, Wednesday); switch between them at runtime with `/agents`
+- The default agent is stored in `rqark-data-cloud` (one per user per source): when `cloud.yml` is configured the startup sequence reads it back and selects it. To change the default, use the Agent Defaults page of `rqark-data-cloud-web-ui`
+- Each project directory has its own sessions: `~/.rqark/dir_caches.json` maps project directories to sessions, so reopening the app in the same project restores the previous conversation
+- Multi-provider configuration ordered by `priority`; after 3 consecutive API failures it fails over automatically. Infinite retry inside `app.chat` is intended behaviour — when the context grows too long it is summarised and compressed before continuing
+- Thinking blocks and tool results are collapsed by default; expand them with `▶` / `▼`
+- `/stop` keeps whatever content had already arrived
+- Drag to select text across lines; `Ctrl+C` copies the selection, `Ctrl+A` selects all, and each message has a `[copy]` button in its top-right corner that copies the whole message (to both the app's internal buffer and the system clipboard)
+- Multiple sessions can run at once: each has its own message pane, worker and transcript. Switch tabs to watch another session's live progress; sessions do not block each other
+- The agent plan is shown in a floating popup with progress markers (` ` pending / `>` in progress / `x` done / `-` cancelled), and only for the current session
+- Subagent output stays inside its own session, displayed in an `Agent - <id>` block
+- The first message of a new session triggers background title generation, shown on the tab
 
-## 安裝
+## Installation
 
-需要 Python ≥ 3.14。
+Requires Python ≥ 3.14.
 
 ```bash
 uv tool install rqark-tui
 ```
 
-或加入專案：
+Or add it to a project:
 
 ```bash
 uv add rqark-tui
 ```
 
-pip 亦可：
+pip works too:
 
 ```bash
 pip install rqark-tui
 ```
 
-## 設定
+## Configuration
 
-設定集中在使用者家目錄的 `~/.rqark/`（跨專案共用，不會污染各專案目錄）：
+Configuration lives in `~/.rqark/` in the user's home directory, shared across projects so it never pollutes individual project directories:
 
 ```text
 ~/.rqark/
-├── providers.yml      # provider 清單（不存在時自動建立空白範本）
-├── agents/            # 每個 agent 一個 .yml（不存在時用內建預設填入）
-├── dir_caches.json    # 專案目錄（cwd hash）→ session 對應
-└── sessions/tui/      # 每 session 一個 .jsonl
+├── providers.yml      # provider list (an empty template is created if missing)
+├── agents/            # one .yml per agent (seeded with the built-in defaults if missing)
+├── dir_caches.json    # project directory (cwd hash) → session
+└── sessions/tui/      # one .jsonl per session
 ```
 
-`dir_caches.json` 以啟動時的所在目錄（cwd hash）為 key，故每個專案各自保留 session。
+`dir_caches.json` is keyed by the directory the app was started in (a cwd hash), so every project keeps its own sessions.
 
-`agents/*.yml` 範例（`name` 用大駝峰類名，tool 名稱見 `rqark-core` 的 `TOOLS` 表；`params` 視 tool 而定）：
+Example `agents/*.yml` (`name` uses UpperCamelCase; tool names come from the `TOOLS` table in `rqark-core`, and `params` depend on the tool):
 
 ```yaml
 name: Diana
@@ -74,11 +74,11 @@ tools:
 - name: WebSearch
 ```
 
-改完 `agents/*.yml` 要重開程式才生效；`/agents` 只會在已載入的 agent 之間切換。因為 YAML 直接存到本機，內含 token 的 agent 檔建議 `chmod 600`（`~/.rqark` 本身不在任何 repo 內）。
+Changes to `agents/*.yml` take effect only after restarting the program; `/agents` only switches between agents already loaded. Because the YAML is stored on the local machine and may contain tokens, an agent file with credentials should be `chmod 600` (`~/.rqark` itself is not inside any repository).
 
-預設 agent 不存本機檔案，而是記在 `rqark-data-cloud`，key 為 app 的 source（本程式用 `TUI`，同一套值亦蓋在 session 上）。有設定 `cloud.yml` 時，開場會讀回該 source 的預設 agent 並選中它；本程式**只讀不寫**，改預設請到 `rqark-data-cloud-web-ui` 的 Agent Defaults 頁（或直接用 `PUT /api/agent-defaults/{source}`）。agent 本身被刪或不再公用時，該預設會一併消失，開場就照 `agents/*.yml` 的次序用第一個。
+The default agent is not stored locally. It lives in `rqark-data-cloud` under the app's source key (`TUI` for this program, and the same value is written onto the session). When `cloud.yml` is configured, startup reads back the default agent for that source and selects it. This program **only reads it, never writes it**; to change the default use the Agent Defaults page of `rqark-data-cloud-web-ui` (or `PUT /api/agent-defaults/{source}` directly). If the agent is deleted or no longer public, that default disappears with it and startup falls back to the first agent in `agents/*.yml` order.
 
-`providers.yml` 範例：
+Example `providers.yml`:
 
 ```yaml
 - name: inhouse
@@ -93,13 +93,13 @@ tools:
   priority: 3
 ```
 
-可用欄位：`name`、`model_name`、`api_key`、`api_base`、`priority`（小者優先），以及選擇性的 `reasoning_effort`、`thinking`、`temperature`、`top_p`、`seed`、`frequency_penalty`、`presence_penalty`、`combine`。provider 依 `priority` 升序使用，失敗自動輪替。
+Available fields: `name`, `model_name`, `api_key`, `api_base`, `priority` (lower wins), plus the optional `reasoning_effort`, `thinking`, `temperature`, `top_p`, `seed`, `frequency_penalty`, `presence_penalty` and `combine`. Providers are used in ascending `priority` order and rotate automatically on failure.
 
-### 主題
+### Themes
 
-配色集中於 `src/rqark_tui/tui/themes/` 下的 JSON 檔，一個檔案一個主題。每個檔案定義同一組語義 token（`bg`、`surface`、`fg`、`accent`、`user`、`agent`、`tool`、`error`、`selection`、`diff_add`、`code_keyword` 等），介面樣式與 Python 渲染器只讀 token 名稱，不寫死色值。新增主題即放入一個 JSON 檔，程式碼無需改動。
+Colours live in the JSON files under `src/rqark_tui/tui/themes/`, one file per theme. Every file defines the same set of semantic tokens (`bg`, `surface`, `fg`, `accent`, `user`, `agent`, `tool`, `error`, `selection`, `diff_add`, `code_keyword` and so on). Interface styles and Python renderers read token names only and never hard-code colour values. Adding a theme means dropping in a JSON file; no code changes are needed.
 
-內建 `default`（原本的配色，預設）、`redqueen`、`eva`、`matrix`。後三者色值取自 `rqark-cloud-web-ui` 的 Dark Theme。
+Built in: `default` (the original palette, the default), `redqueen`, `eva` and `matrix`. The colour values of the latter three come from the Dark Theme of `rqark-cloud-web-ui`.
 
 | default | redqueen |
 | --- | --- |
@@ -107,21 +107,21 @@ tools:
 | **eva** | **matrix** |
 | <img src="_docs/image/theme/eva.png" width="480" alt="eva theme"> | <img src="_docs/image/theme/matrix.png" width="480" alt="matrix theme"> |
 
-`/theme` 會開出選擇面板，與 `/models`、`/agents` 一樣用方向鍵挑選、`Enter` 確認、`Esc` 取消；`/theme <名稱>` 直接切換。切換即時生效，並寫入 data cloud 嘅使用者設定（key `tui.theme`），下次啟動自動套回。環境變數 `RQARK_THEME` 仍然可以覆寫啟動時嘅選擇；未連 cloud 或未存過設定時用 `default`。
+`/theme` opens a picker: like `/models` and `/agents`, use the arrow keys to choose, `Enter` to confirm and `Esc` to cancel. `/theme <name>` switches directly. The change takes effect immediately and is saved to the data cloud as a user setting (key `tui.theme`), so it is restored on the next launch. The `RQARK_THEME` environment variable can still override the startup choice; when there is no cloud connection or no saved setting, `default` is used.
 
-## 啟動
+## Startup
 
-介面先畫出嚟，之後才讀 cloud：輸入框、header、tab 列即時顯示，agent、model、session、SOP 喺背景陸續填入。啟動期間打字不會遺失，`Enter` 會提示「Still starting」並保留輸入內容。
+The interface is drawn first and the cloud is read afterwards: the input box, header and tab bar appear immediately, while the agent, model, sessions and SOP are filled in in the background. Typing during startup is not lost — `Enter` shows "Still starting" and keeps the input.
 
-## 使用
+## Usage
 
 ```bash
 rqark-tui
 ```
 
-在相同專案目錄再次執行，會接返該目錄記住嘅所有對話（每條開一個 tab，最近用過嘅排最前，畫面顯示第一條）。
+Running it again in the same project directory restores every conversation remembered for that directory (one tab each, most recently used first, with the first one on screen).
 
-畫面由上至下：header（agent / model / 標題）、session tab、訊息窗、popup（plan 或選單，需要時才出現）、輸入框。
+Layout from top to bottom: header (agent / model / title), session tabs, message pane, popup (plan or menu, only when needed), input box.
 
 ```text
 <header>
@@ -131,59 +131,59 @@ rqark-tui
 <footer>
 ```
 
-### 多個 session
+### Multiple sessions
 
-- 點 `+`（或輸入 `/new`）開一條新 session；每條 session 各自有訊息紀錄、進行中的回應同輸入草稿
-- 切 tab 只換上面嘅訊息窗，背景 session 照樣繼續串流，切返去就見到完整內容
-- 正在回應嘅 session，tab 會變黃色；該 session 未完成前唔可以再送訊息（其他 session 不受影響）
-- `/stop`、`/clear`、`/close` 只作用於目前 session
-- 移除 session 有兩種方法，效果一樣：點 tab 上面嘅 `×`、或輸入 `/close`；兩者都會先彈確認 dialog（`Enter`/`Esc` 取消、`Ctrl+E` 確認、或直接點按鈕）
-- 確認後會終止該 session 進行中嘅回應，再刪除它嘅對話紀錄（之後無法復原）；最後一條 session 唔可以關（要清空就用 `/clear`），因為畫面永遠要有一條 session
-- 關掉程式再喺同一目錄開返，之前嘅 session 會逐條還原成 tab；已經刪咗嘅則唔會再還原
+- Click `+` (or type `/new`) to open a new session; each session keeps its own message history, in-flight response and input draft
+- Switching tabs only changes the message pane above; background sessions keep streaming and show the full content when you switch back
+- A session that is responding turns its tab yellow and will not accept another message until it finishes (other sessions are unaffected)
+- `/stop`, `/clear` and `/close` only affect the current session
+- There are two ways to remove a session, both equivalent: click the `×` on its tab, or type `/close`. Both show a confirmation dialog (`Enter`/`Esc` cancels, `Ctrl+E` confirms, or click the buttons)
+- Confirming terminates the in-flight response, then deletes the session's transcript (this cannot be undone). The last session cannot be closed (use `/clear` to empty it) because there must always be one session on screen
+- Quitting and reopening in the same directory restores the previous sessions as tabs; deleted ones are not restored
 
-### 快捷鍵
+### Key bindings
 
-| 按鍵 | 功能 |
+| Key | Action |
 | --- | --- |
-| `Enter` | 送出訊息 |
-| `Shift+Enter`（或 `Ctrl+Enter`、`Ctrl+J`） | 換行 |
-| `Ctrl+C` | 複製選取範圍（未選取時）／複製訊息面板選取 |
-| `Ctrl+A` | 於訊息面板全選 |
-| `Ctrl+E` | 離開（再次按或 `Enter` 於 Quit 確認） |
-| `Esc` × 3 | 離開（同上，會先跳出確認） |
-| `Tab` / `↑` / `↓` | popup 中移動選項 |
-| `Esc` | 關閉 popup / 取消 |
+| `Enter` | Send the message |
+| `Shift+Enter` (or `Ctrl+Enter`, `Ctrl+J`) | Insert a newline |
+| `Ctrl+C` | Copy the selection (or the message-pane selection when nothing is selected) |
+| `Ctrl+A` | Select all in the message pane |
+| `Ctrl+E` | Quit (press again, or `Enter` on the Quit confirmation) |
+| `Esc` × 3 | Quit (same confirmation as above) |
+| `Tab` / `↑` / `↓` | Move between options in a popup |
+| `Esc` | Close the popup / cancel |
 
-滑鼠操作：拖曳選取跨行文字、點 `[copy]` 複製整則訊息、點 `▶` / `▼` 展開或收合 thinking／tool result、點 session tab 切換 session、點 `+` 開新 session、點 tab 上嘅 `×` 關閉該 session。
+Mouse: drag to select text across lines, click `[copy]` to copy a whole message, click `▶` / `▼` to expand or collapse thinking and tool results, click a session tab to switch session, click `+` to open a new session, click `×` on a tab to close that session.
 
-> macOS 終端（如 Terminal.app）若吞掉修飾鍵，程式會直接讀取實體鍵盤狀態，確保 `Shift/Ctrl+Enter` 仍可換行。
+> On macOS terminals (such as Terminal.app) that swallow modifier keys, the program reads the physical keyboard state directly so `Shift/Ctrl+Enter` still inserts a newline.
 
-### 斜線指令
+### Slash commands
 
-輸入 `/` 會帶出完成清單，`Enter` 立即執行。
+Typing `/` brings up the completion list; `Enter` runs the command immediately.
 
-| 指令 | 功能 |
+| Command | Action |
 | --- | --- |
-| `/clear` | 清除目前對話（刪除 session 檔，保留 tab） |
-| `/close` | 關閉目前 session（確認後刪除 session 檔並收起 tab） |
-| `/compact` | 將目前對話壓縮成一段 summary（壓縮期間顯示 `Compacting…`，之後只帶 summary 同新訊息續聊） |
-| `/new` | 開一條新 session（同點 `+` 一樣） |
-| `/stop` | 停止目前回應（已收到的部分內容會存下） |
-| `/models` | 切換 model（picker 顯示目前可用 provider） |
-| `/agents` | 切換 agent（只影響目前 session；預設 agent 請在 `rqark-data-cloud-web-ui` 改） |
-| `/theme` | 切換配色主題（開面板挑選；亦可 `/theme <名稱>` 直接切換） |
+| `/clear` | Clear the current conversation (delete the session file, keep the tab) |
+| `/close` | Close the current session (delete the session file and remove the tab after confirmation) |
+| `/compact` | Compress the current conversation into a summary (`Compacting…` is shown while it runs; afterwards only the summary plus new messages are sent) |
+| `/new` | Open a new session (same as clicking `+`) |
+| `/stop` | Stop the current response (content already received is kept) |
+| `/models` | Switch model (the picker lists the available providers) |
+| `/agents` | Switch agent (affects the current session only; change the default agent in `rqark-data-cloud-web-ui`) |
+| `/theme` | Switch colour theme (opens a picker; `/theme <name>` switches directly) |
 
-回應進行中會擋下一般訊息（顯示 "Still processing — please wait"），但斜線指令不受限制，`/stop` 即逃生門。
+While a response is running, ordinary messages are refused ("Still processing — please wait"), but slash commands still work — `/stop` is the escape hatch.
 
-## 開發
+## Development
 
 ```bash
 uv sync
-uv run rqark-tui        # 直接執行
+uv run rqark-tui        # run directly
 uv run ruff check --fix
 uv run ty check --fix
-uv run pyright          # 輔助確認 type safety
+uv run pyright          # extra type-safety confirmation
 uv run mypy
 ```
 
-規格：Python ≥ 3.14、ruff line-length 240、單引號風格、型別檢查以 `ruff` + `ty` 為主。
+Standards: Python ≥ 3.14, ruff line-length 240, single-quote style, and type checking driven primarily by `ruff` + `ty`.
