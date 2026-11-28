@@ -1419,6 +1419,20 @@ async def test_two_edits_of_the_same_tool_pair_in_call_order():
         assert 'src/b.py' in second.patch and 'added one' not in second.patch
 
 
+async def test_results_that_land_out_of_order_pair_by_call_id():
+    """Concurrent tools finish in any order, so the name alone cannot pair a result."""
+    async with PaneApp().run_test(size=(40, 120)) as pilot:
+        pane = pilot.app.query_one(MessagePane)
+        await pilot.pause()
+        pane.append_tool_call('edit_file', EDIT_CALL, call_id='c1')
+        pane.append_tool_call('edit_file', SECOND_EDIT_CALL, call_id='c2')
+        pane.append_tool_result('edit_file', 'Successfully edited src/b.py', call_id='c2')
+        pane.append_tool_result('edit_file', 'Successfully edited src/app.py', call_id='c1')
+        first, second = pane._blocks[0].sections[-2:]
+        assert 'src/b.py' in first.patch and 'added one' not in first.patch
+        assert 'src/app.py' in second.patch and 'new b' not in second.patch
+
+
 async def test_narrow_resize_keeps_a_sane_render_width(small_window):
     async with PaneApp().run_test(size=(40, 20)) as pilot:
         pane = pilot.app.query_one(MessagePane)

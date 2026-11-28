@@ -95,7 +95,7 @@ async def connect_agent_event_to_tui(app: AgentApp, tui: AgentTUI):
             return
         if isinstance(ev.payload.content, list):
             for call in ev.payload.content:
-                tui.append_tool_call(call.name, call.arguments, agent_id=ev.agent_id, path=ev.path)
+                tui.append_tool_call(call.name, call.arguments, agent_id=ev.agent_id, path=ev.path, call_id=call.id)
 
     @app.on_tool_result()
     async def tool_result(ev: AgentPayload[ToolMessage]) -> None:
@@ -105,7 +105,7 @@ async def connect_agent_event_to_tui(app: AgentApp, tui: AgentTUI):
         if not isinstance(tm, ToolMessage):
             tm = tm.content if isinstance(getattr(tm, 'content', None), ToolMessage) else None
         if tm is not None:
-            tui.append_tool_result(tm.tool_name or '', tm.content, agent_id=ev.agent_id, path=ev.path)
+            tui.append_tool_result(tm.tool_name or '', tm.content, agent_id=ev.agent_id, path=ev.path, call_id=tm.tool_call_id)
 
     @app.on_error()
     async def error(ev: AgentPayload[Chunk]) -> None:
