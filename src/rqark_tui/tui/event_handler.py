@@ -103,8 +103,6 @@ class EventHandler:
         self._stream_reasoning = ''
         self._stream_active = True
         self._stop_requested = False
-        # Filled by the app and the core if this turn is cancelled: the turn's own
-        # history, which is the only place its tool calls and results exist.
         partial: list[Message] = []
         try:
             if self.session_id is None:
@@ -189,8 +187,6 @@ class EventHandler:
                     self.forget_session()
                 self._stream_content = ''
                 self._stream_reasoning = ''
-                # No notice: an emptied pane shows the wordmark again, and a system
-                # block would count as content and keep the splash hidden.
                 self.tui.clear_session(self.key)
                 return None
             case '/stop':
