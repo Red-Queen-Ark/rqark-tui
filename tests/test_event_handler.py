@@ -9,7 +9,7 @@ from rqark_app.app import AgentApp
 from rqark_app.config.manager import ConfigManager
 from rqark_app.provider.manager import ProviderManager
 from rqark_app.sop.types import LOCAL_SOURCE, Sop
-from rqark_app.tools.context import AGENT_KEY, CLIENT_KEY, SOURCE_KEY
+from rqark_app.tools.context import AGENT_KEY, CLIENT_KEY, COMPACT_KEY, SESSION_KEY, SOURCE_KEY
 from rqark_app.types.session import Session, SummaryMessage
 from rqark_core.types.chat import AssistantMessage, Chunk, Message, ToolCall, ToolMessage, UserMessage
 from rqark_core.types.event import AgentPayload
@@ -88,9 +88,13 @@ class FakeCompactor:
     def __init__(self, summary: SummaryMessage | None = None) -> None:
         self.summary = summary
         self.calls: list[list[Message]] = []
+        self.clients: list[object | None] = []
+        self.extras: list[dict[str, object] | None] = []
 
-    async def get_summary(self, messages: list[Message]) -> SummaryMessage | None:
+    async def get_summary(self, messages: list[Message], cloud_client: object | None = None, extras: dict[str, object] | None = None) -> SummaryMessage | None:
         self.calls.append(list(messages))
+        self.clients.append(cloud_client)
+        self.extras.append(extras)
         return self.summary
 
 
@@ -902,6 +906,23 @@ async def test_compact_with_a_missing_session_reports_nothing():
     handler, app, _tui, _config, _agents = build(session_id='missing')
     assert await handler.command('/compact') == 'Nothing to compact'
     assert app.compactor.calls == []
+
+
+async def test_compact_hands_the_cloud_connection_to_the_summary_call():
+    app = FakeApp()
+    tui = FakeTUI()
+    agent_mgr = AgentManager(cast('object', [StubAgent('agent-a', 'agent-1')]))
+    client = object()
+    config_mgr = FakeConfigManager(cloud_client=client)
+    handler = EventHandler(cast(AgentApp, app), cast(AgentTUI, tui), agent_mgr, cast(ConfigManager, config_mgr), None, 'session-1')
+    session = await app.session_mgr.create()
+    handler.session_id = session.uuid
+    session.history = [UserMessage('first'), AssistantMessage('answer')]
+    app.compactor.summary = SummaryMessage('the summary')
+
+    assert await handler.command('/compact') == 'Conversation compacted'
+    assert app.compactor.clients == [client]
+    assert app.compactor.extras == [{CLIENT_KEY: client, AGENT_KEY: 'agent-1', SOURCE_KEY: 'TUI', SESSION_KEY: session.uuid, COMPACT_KEY: True}]
 
 
 async def test_chat_hands_the_cloud_connection_to_the_turn():

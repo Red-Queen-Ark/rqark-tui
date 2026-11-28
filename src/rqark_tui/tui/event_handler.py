@@ -6,7 +6,7 @@ from rqark_app.app import AgentApp
 from rqark_app.compact import compact_messages
 from rqark_app.config.manager import ConfigManager
 from rqark_app.sop.expand import expand
-from rqark_app.tools.context import AGENT_KEY, CLIENT_KEY, SOURCE_KEY
+from rqark_app.tools.context import AGENT_KEY, CLIENT_KEY, COMPACT_KEY, SESSION_KEY, SOURCE_KEY
 from rqark_app.types.agent import BaseAgent
 from rqark_app.types.session import Session
 from rqark_core.types.chat import Chunk, Message
@@ -83,6 +83,13 @@ class EventHandler:
         if client is None or not agent.id:
             return None
         return {CLIENT_KEY: client, AGENT_KEY: agent.id, SOURCE_KEY: self.config_mgr.source}
+
+    def _compact_extras(self, session: Session) -> dict[str, object] | None:
+        """A compaction call's tags: the turn's own connection, marked as a compaction."""
+        extras = self._extras(self._current_agent())
+        if extras is None:
+            return None
+        return {**extras, SESSION_KEY: session.uuid, COMPACT_KEY: True}
 
     async def gen_title(self, session_uuid: str, first_message: str) -> None:
         titled = await self.app.chat_helper.gen_title(session_uuid, first_message)
@@ -199,7 +206,7 @@ class EventHandler:
                     return 'Nothing to compact'
                 self.tui.show_status(self.key, 'Compacting…')
                 try:
-                    summary = await self.app.compactor.get_summary(messages)
+                    summary = await self.app.compactor.get_summary(messages, self.config_mgr.cloud_client, self._compact_extras(session))
                 finally:
                     self.tui.hide_status(self.key)
                 if summary is None:
