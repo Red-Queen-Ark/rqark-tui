@@ -269,6 +269,7 @@ class MessagePane(RichLog):
         for block in self._blocks:
             for section in block.sections:
                 section.display = None
+                section.rendered = None
         self._prewarm.clear()
         if self._blocks:
             self._rebuild()

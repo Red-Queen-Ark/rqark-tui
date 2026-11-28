@@ -13,7 +13,7 @@ from textual.strip import Strip
 
 from rqark_tui.tui.components import main as main_module
 from rqark_tui.tui.components.main import MessagePane, _apply_selection_style, _crop_plain
-from rqark_tui.tui.theme import active_theme
+from rqark_tui.tui.theme import active_theme, load_theme, use_theme
 
 SELECTION_COLOR = Color.parse(active_theme().color('selection'))
 
@@ -25,6 +25,10 @@ class PaneApp(App[None]):
 
 def rendered_text(pane: MessagePane) -> str:
     return '\n'.join(line.text for line in pane.lines)
+
+
+def rendered_colours(pane: MessagePane) -> set[Color]:
+    return {segment.style.color for line in pane.lines for segment in line if segment.style is not None and segment.style.color is not None}
 
 
 def track_renders(monkeypatch: pytest.MonkeyPatch) -> list[int]:
@@ -312,6 +316,28 @@ async def test_rebuild_resets_dirty_state_and_recomputes_spans():
         assert pane._dirty_index is None
         assert len(pane._message_spans) == len(pane._blocks)
         assert 'two' in rendered_text(pane)
+
+
+async def test_repaint_recolours_cached_code_blocks():
+    original = active_theme()
+    eva = load_theme('eva')
+    try:
+        async with PaneApp().run_test(size=(40, 100)) as pilot:
+            pane = pilot.app.query_one(MessagePane)
+            await pilot.pause()
+            pane.append_agent_delta('intro paragraph\n\n```python\ndef f(x):\n    return x + 1\n```\n\n')
+            pane.close_agent_message()
+            await pilot.pause()
+            assert Color.parse(original.color('code_keyword')) in rendered_colours(pane)
+            use_theme(eva)
+            pane.repaint()
+            await pilot.pause(0.3)
+            assert pane._rewind_queue is None
+            colours = rendered_colours(pane)
+            assert Color.parse(eva.color('code_keyword')) in colours
+            assert Color.parse(original.color('code_keyword')) not in colours
+    finally:
+        use_theme(original)
 
 
 async def test_submitted_message_starts_a_user_block():

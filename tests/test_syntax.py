@@ -3,6 +3,7 @@ import io
 from rich.console import Console
 from rich.markdown import Markdown
 
+from rqark_tui.tui import theme
 from rqark_tui.tui.syntax import code_theme, markdown, normalise_fences, resolve_language
 
 
@@ -58,6 +59,19 @@ def test_markdown_uses_the_transcript_code_theme():
     renderable = markdown('```python\nx = 1\n```')
     assert isinstance(renderable, Markdown)
     assert renderable.code_theme is code_theme()
+
+
+def test_code_theme_follows_a_theme_switch():
+    original = theme.active_theme()
+    try:
+        theme.use_theme(theme.load_theme('default'))
+        before = code_theme()
+        theme.use_theme(theme.load_theme('eva'))
+        after = code_theme()
+    finally:
+        theme.use_theme(original)
+    assert before is not after
+    assert markdown('```python\nx = 1\n```').code_theme is after
 
 
 def test_an_unknown_fence_renders_without_raising():

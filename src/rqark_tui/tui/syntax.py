@@ -65,12 +65,18 @@ def _build_style(name: str) -> type[PygmentsStyle]:
 
 
 @cache
+def _cached_code_theme(name: str) -> SyntaxTheme:
+    return PygmentsSyntaxTheme(_build_style(name))
+
+
 def code_theme(name: str | None = None) -> SyntaxTheme:
     """Rich's syntax theme built from the theme called ``name``.
 
-    ``None`` means the active theme.
+    ``None`` means the active theme. The cache is keyed on the resolved theme
+    name, so switching themes builds a new syntax theme instead of returning
+    the one cached for the old palette.
     """
-    return PygmentsSyntaxTheme(_build_style(name or active_theme().name))
+    return _cached_code_theme(name or active_theme().name)
 
 
 class ThemedMarkdown(Markdown):
