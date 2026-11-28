@@ -609,11 +609,11 @@ class AgentTUI(QuitHandler, App):
                     pane.append_agent_delta(m.content, at, agent_id)
                 if m.tool_calls:
                     for call in m.tool_calls:
-                        pane.append_tool_call(call.name, call.arguments, at, agent_id)
+                        pane.append_tool_call(call.name, call.arguments, at, agent_id, call_id=call.id)
                 else:
                     pane.close_agent_message(agent_id)
             elif isinstance(m, ToolMessage):
-                pane.append_tool_result(m.tool_name or '', m.content, at, agent_id)
+                pane.append_tool_result(m.tool_name or '', m.content, at, agent_id, call_id=m.tool_call_id)
 
     def append_message(self, text: str, at: datetime | None = None, images: Sequence[str] | None = None, message_id: str = '', key: str | None = None) -> None:
         pane = self._pane_for(key)
@@ -641,15 +641,15 @@ class AgentTUI(QuitHandler, App):
         if pane is not None:
             pane.close_agent_message(agent_id, path)
 
-    def append_tool_call(self, name: str, arguments: str = '', at: datetime | None = None, agent_id: str = '', path: tuple[str, ...] = (), key: str | None = None) -> None:
+    def append_tool_call(self, name: str, arguments: str = '', at: datetime | None = None, agent_id: str = '', path: tuple[str, ...] = (), key: str | None = None, call_id: str = '') -> None:
         pane = self._pane_for(key, agent_id, path)
         if pane is not None:
-            pane.append_tool_call(name, arguments, at, agent_id, path)
+            pane.append_tool_call(name, arguments, at, agent_id, path, call_id)
 
-    def append_tool_result(self, name: str, content: str, at: datetime | None = None, agent_id: str = '', path: tuple[str, ...] = (), key: str | None = None) -> None:
+    def append_tool_result(self, name: str, content: str, at: datetime | None = None, agent_id: str = '', path: tuple[str, ...] = (), key: str | None = None, call_id: str = '') -> None:
         pane = self._pane_for(key, agent_id, path)
         if pane is not None:
-            pane.append_tool_result(name, content, at, agent_id, path)
+            pane.append_tool_result(name, content, at, agent_id, path, call_id)
 
     def append_error(self, text: str, at: datetime | None = None, agent_id: str = '', path: tuple[str, ...] = (), key: str | None = None) -> None:
         pane = self._pane_for(key, agent_id, path)

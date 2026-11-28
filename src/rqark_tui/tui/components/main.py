@@ -69,6 +69,7 @@ class _Section:
     diff: bool = False
     patch: str = ''
     answered: bool = False
+    call_id: str = ''
 
     def __post_init__(self) -> None:
         self.text = _content_text(self.text)
@@ -371,7 +372,7 @@ class MessagePane(RichLog):
         self._close_agent(_agent_label(agent_id, path))
         self._flush_now()
 
-    def append_tool_call(self, name: str, arguments: str = '', at: datetime | None = None, agent_id: str = '', path: tuple[str, ...] = ()) -> None:
+    def append_tool_call(self, name: str, arguments: str = '', at: datetime | None = None, agent_id: str = '', path: tuple[str, ...] = (), call_id: str = '') -> None:
         self._flush_now()
         agent = _agent_label(agent_id, path)
         if self._blocks and self._blocks[-1].kind == 'tools' and self._blocks[-1].open and self._blocks[-1].agent == agent:
@@ -382,10 +383,10 @@ class MessagePane(RichLog):
             self._new_block('tools', at, [], agent)
             block = self._blocks[-1]
             idx = len(self._blocks) - 1
-        block.sections.append(_Section('tool', name, arguments))
+        block.sections.append(_Section('tool', name, arguments, call_id=call_id))
         self._append_section_rows(idx)
 
-    def append_tool_result(self, name: str, content: str, at: datetime | None = None, agent_id: str = '', path: tuple[str, ...] = ()) -> None:
+    def append_tool_result(self, name: str, content: str, at: datetime | None = None, agent_id: str = '', path: tuple[str, ...] = (), call_id: str = '') -> None:
         self._flush_now()
         agent = _agent_label(agent_id, path)
         if self._blocks and self._blocks[-1].kind == 'tools' and self._blocks[-1].agent == agent:
@@ -399,18 +400,28 @@ class MessagePane(RichLog):
             idx = len(self._blocks) - 1
         patch = content if diff.looks_like_diff(content) else ''
         if not patch and name in diff.REBUILDABLE and not content.lstrip().startswith('Error:'):
-            patch = diff.from_arguments(name, self._tool_arguments(name)) or ''
+            patch = diff.from_arguments(name, self._tool_arguments(name, call_id)) or ''
         block.sections.append(_Section('result', name or 'tool', content.strip(), collapsed=True, diff=bool(patch), patch=patch))
         self._append_section_rows(idx)
 
-    def _tool_arguments(self, name: str) -> str:
-        """Arguments of the oldest unanswered call to ``name``, the one this result belongs to.
+    def _tool_arguments(self, name: str, call_id: str = '') -> str:
+        """Arguments of the call this result answers.
 
-        The call and its result can land in different blocks — a block closes when the
-        agent speaks between them — so the search walks the whole transcript. Results
-        arrive in call order, so pairing with the oldest unanswered call keeps two
-        edits of the same tool apart; a call answers at most one result.
+        Concurrent tool calls finish out of order, so the tool name alone cannot
+        identify a call: two edits of the same tool would swap arguments. The
+        ``tool_call_id`` the result carries is the only reliable pairing, and when it
+        is present it wins.
+
+        Results that predate the id — a replayed session stored by an older build —
+        fall back to the oldest unanswered call with the same name, which is how they
+        were paired before. A call answers at most one result.
         """
+        if call_id:
+            for block in self._blocks:
+                for section in block.sections:
+                    if section.mode == 'tool' and section.call_id == call_id:
+                        section.answered = True
+                        return section.text
         for block in self._blocks:
             for section in block.sections:
                 if section.mode == 'tool' and section.name == name and not section.answered:
