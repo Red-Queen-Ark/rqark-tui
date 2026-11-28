@@ -1,6 +1,7 @@
 from rqark_core.types.chat import UserMessage
 
 from rqark_tui.tui import AgentTUI
+from rqark_tui.tui.components.footer import ChatInput
 from rqark_tui.tui.components.main import MessagePane
 from rqark_tui.tui.components.splash import GLYPH_COLUMNS, GLYPH_ROWS, Splash, glyphs_cover, wordmark_lines, wordmark_width
 
@@ -92,6 +93,35 @@ async def test_clearing_a_session_brings_the_splash_back():
         tui.clear_messages()
         await pilot.pause()
         assert visible(tui)
+
+
+class ClearBridge:
+    """Session handler whose /clear empties the pane, as the real one does."""
+
+    def __init__(self, tui: AgentTUI) -> None:
+        self.tui = tui
+
+    async def chat(self, text: str, images: list[str] | None = None) -> None:
+        return None
+
+    async def command(self, command: str) -> str | None:
+        self.tui.clear_session(self.tui.active_key)
+        return None
+
+
+async def test_the_clear_command_leaves_the_splash_on_screen():
+    tui = AgentTUI()
+    async with tui.run_test(size=(40, 100)) as pilot:
+        await pilot.pause()
+        tui.set_session_factory(lambda key, session_id: ClearBridge(tui))
+        tui.append_message('hello')
+        await pilot.pause()
+        assert not visible(tui)
+        tui.query_one(ChatInput).text = '/clear'
+        await pilot.press('enter')
+        await pilot.pause(0.1)
+        assert visible(tui)
+        assert 'Conversation cleared' not in '\n'.join(line.text for line in tui.query_one(MessagePane).lines)
 
 
 async def test_the_wordmark_follows_a_theme_change():

@@ -560,7 +560,7 @@ async def test_clear_deletes_the_session_and_resets_the_tui():
     handler, app, tui, _config, _agents = build()
     session = await app.session_mgr.create()
     handler.session_id = session.uuid
-    assert await handler.command('/clear') == 'Conversation cleared'
+    assert await handler.command('/clear') is None
     assert app.session_mgr.deleted == [session.uuid]
     assert handler.session_id is None
     assert tui.cleared == ['session-1']
@@ -569,7 +569,7 @@ async def test_clear_deletes_the_session_and_resets_the_tui():
 
 async def test_clear_without_a_session_still_resets_the_tui():
     handler, app, tui, _config, _agents = build()
-    assert await handler.command('/clear') == 'Conversation cleared'
+    assert await handler.command('/clear') is None
     assert app.session_mgr.deleted == []
     assert tui.cleared == ['session-1']
 
@@ -713,7 +713,7 @@ async def test_a_built_in_command_wins_over_a_sop_of_the_same_name():
     sop = Sop('clear', 'Clear', '# Clear the log', LOCAL_SOURCE)
     handler, app, _tui, _config, _agents = build(sops=[sop])
 
-    assert await handler.command('/clear') == 'Conversation cleared'
+    assert await handler.command('/clear') is None
     assert app.chat_calls == []
 
 
@@ -761,7 +761,7 @@ async def test_clear_forgets_the_session_in_the_dir_cache():
     handler, app, _tui, config, _agents = build()
     session = await app.session_mgr.create()
     handler.session_id = session.uuid
-    assert await handler.command('/clear') == 'Conversation cleared'
+    assert await handler.command('/clear') is None
     assert config.dir_cache.forgotten == [('cwd-hash', session.uuid)]
     assert handler.session_id is None
 

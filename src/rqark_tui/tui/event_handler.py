@@ -189,8 +189,10 @@ class EventHandler:
                     self.forget_session()
                 self._stream_content = ''
                 self._stream_reasoning = ''
+                # No notice: an emptied pane shows the wordmark again, and a system
+                # block would count as content and keep the splash hidden.
                 self.tui.clear_session(self.key)
-                return 'Conversation cleared'
+                return None
             case '/stop':
                 self._stop_requested = True
                 self.tui.cancel_chat(self.key)
